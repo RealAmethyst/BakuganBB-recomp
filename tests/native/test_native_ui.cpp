@@ -9,6 +9,8 @@
 #include <rex/ui/keyboard_dialog.h>
 #include <rex/ui/message_box_dialog.h>
 
+#include "native_speech.h"
+
 namespace rex::ui {
 KeyboardDialogObserver observer;
 void SetKeyboardDialogObserver(KeyboardDialogObserver value) { observer = std::move(value); }
@@ -93,9 +95,53 @@ int main() {
     assert(json.at("kind") == kinds[i]);
     assert(json.at("body") == (i == 0 ? popup.description : ""));
     assert(json.at("label") == (i == 1 ? popup.label : ""));
+    assert(json.at("value") == "");
     assert(json.at("position") == (i == 1 ? 2 : 0));
     assert(json.at("total") == (i == 1 ? 2 : 0));
   }
+  assert(!std::fgets(line, sizeof(line), output));
+  std::clearerr(output);
+  ScreenEvent creator;
+  creator.source = "creator";
+  creator.kind = "focused";
+  creator.id = 43;
+  creator.label = "Synthetic setting";
+  creator.value = "Value \"é\"\nsecond line";
+  creator.description = "Synthetic description";
+  creator.description_key = "synthetic_shape";
+  creator.selected = true;
+  creator.position = 1;
+  creator.total = 2;
+  assert(SendScreenEvent(creator));
+  ScreenEvent status;
+  status.source = "status";
+  status.kind = "opened";
+  status.id = 44;
+  status.body = "Synthetic status body";
+  assert(SendScreenEvent(status));
+  creator.value = "\xff";
+  assert(!SendScreenEvent(creator));
+  std::fflush(stderr);
+  std::rewind(output);
+  for (int i = 0; i < 7; ++i)
+    assert(std::fgets(line, sizeof(line), output));
+  assert(std::fgets(line, sizeof(line), output));
+  auto json = nlohmann::json::parse(std::string(line).substr(16));
+  assert(json.at("source") == "creator" && json.at("id") == 43);
+  assert(json.at("value") == "Value \"é\"\nsecond line");
+  assert(json.at("label") == "Synthetic setting");
+  assert(json.at("description") == "Synthetic description");
+  assert(json.at("description_key") == "synthetic_shape");
+  assert(json.at("selected") == true);
+  assert(json.at("position") == 1 && json.at("total") == 2);
+  assert(std::fgets(line, sizeof(line), output));
+  json = nlohmann::json::parse(std::string(line).substr(16));
+  assert(json.at("source") == "status" && json.at("id") == 44);
+  assert(json.at("body") == "Synthetic status body");
+  assert(json.at("selected") == false);
+  assert(json.at("value") == "" && json.at("position") == 0 && json.at("total") == 0);
+  assert(std::fgets(line, sizeof(line), output));
+  assert(std::string(line) == "BRAWLERS_SCREEN:serialization failed\n");
   assert(!std::fgets(line, sizeof(line), output));
   std::fclose(output);
   std::puts("Native UI JSON round trip, lifecycle fields and invalid UTF-8 checks passed.");

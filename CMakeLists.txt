@@ -12,7 +12,7 @@ set_target_properties(brawlers_core PROPERTIES CXX_EXTENSIONS OFF)
 
 include(CTest)
 if(BUILD_TESTING)
-    foreach(fixture IN ITEMS guest_ui_memory game_speech_queue)
+    foreach(fixture IN ITEMS guest_ui_memory game_speech_queue native_localization)
         add_executable(test_${fixture} tests/native/test_${fixture}.cpp)
         target_link_libraries(test_${fixture} PRIVATE brawlers_core)
         # These fixtures use assert for verification, including in Release builds.
