@@ -28,9 +28,9 @@ Please don't upload game files or private logs.
 
 ## Community and contributing
 
-[Join the Discord community](https://discord.gg/ftWEJ7YDx8) to talk about the project, share feedback or get involved.
+[Join the Discord community](https://discord.gg/ftWEJ7YDx8) to talk about the project, share feedback or get involved. My other projects are there as well so it is not just a Bakugan server.
 
-Help with testing, graphics, blind accessibility, reverse engineering and other platforms is welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) before contributing code. The [documentation](docs/README.md) covers the code layout and what we've learned about the game.
+Help with testing, graphics, reverse engineering and other platforms is welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) before contributing code. The [documentation](docs/README.md) covers the code layout and what we've learned about the game.
 
 ## License and credits
 
