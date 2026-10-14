@@ -1,14 +1,12 @@
 # Bakugan Battle Brawlers Recomp
 
-An early, work-in-progress recompilation of the Xbox 360 version of Bakugan Battle Brawlers (2009) for native PC play. Linux and Vulkan are the first targets, with other platforms planned for the future. Accurate gameplay, screen-reader accessibility and understanding the original game are core goals.
+An early, work-in-progress recompilation of the Xbox 360 version of Bakugan Battle Brawlers (2009) for native PC play. Linux and Vulkan are the first targets, with other platforms planned for the future. Accurate gameplay, blind accessibility and understanding the original game are core goals.
 
-**You need your own copy of the game to build or run the native game.** This repository contains no game files, generated game code or playable binary, and provides no instructions for obtaining game assets. Source-only tests do not require the game.
+**You need your own copy of the game to build or run the native game.** This repository contains no game files, generated game code or playable binary, and provides no instructions for obtaining game assets.
 
 ## Current status
 
-The private diagnostic build reaches the title and main menus with working input, music and opening playback. Name entry has been confirmed working. Diagnostic build `20261014.7` adds save-picker and popup speech, controller input for host popups, and logo announcements tied to verified movie pictures. Its offline checks pass; those latest changes still need listening confirmation. Complete gameplay and saving remain unverified.
-
-Game CPU code is statically recompiled. The evaluated runtime uses ReXGlue's Xenos-to-Vulkan backend, including Xenia-derived graphics and console-service code. It does not launch a traditional emulator executable. Windows and macOS support are not implemented or tested.
+Input is working, audio works, graphics should work (see later section on that) Expect crashes, do not excpect to get any far in the game, cool if you do, but I haven't verified it.
 
 ## Building
 
@@ -33,22 +31,20 @@ This builds the core and runs the synthetic tests in isolation. It does not buil
 
 ## Reporting bugs
 
-This is early development, and complete gameplay and saving have not been verified. Graphics are especially under-tested: the maintainer is blind and cannot visually inspect the game's output. Reports of rendering problems are welcome; please describe what looks wrong and what you expected to see.
+This is early development, and complete gameplay and saving have not been verified. Graphics are especially under-tested: I am blind and cannot visually inspect the game's output. Reports of rendering problems are welcome; please describe what looks wrong and what you expected to see.
 
 [Open an issue](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/new) with:
 
 - The build or commit you tested, your operating system, GPU and driver version.
 - Steps to reproduce the problem and the screen or part of the game affected.
 - What happened, what you expected, and whether it happens consistently.
-- For graphics problems, the graphics settings and a description of missing, distorted or incorrectly displayed elements.
-
-For accessibility problems, describe the input you used and what was spoken or missing. Do not attach game files, generated game code or private logs. Remove personal information from any error text you include.
+- For graphics problems, the graphics settings and a description of missing, distorted or incorrectly displayed elements.ed game code or private logs. 
 
 ## Get involved
 
 Help with testing, graphics, accessibility, reverse engineering, documentation and cross-platform support is welcome. You can [report a problem or discuss an idea in GitHub Issues](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues), or contribute a focused pull request. Read [CONTRIBUTING.md](CONTRIBUTING.md) before starting.
 
-A Discord community link will be added here.
+https://discord.gg/ftWEJ7YDx8
 
 ## Documentation
 
