@@ -14,7 +14,7 @@ These notices cover the source included here. They are not a complete notice inv
 
 ## Prism
 
-The independently authored Python adapter calls the Prism API. Prism itself is not vendored or distributed here. The evaluated dependency uses MPL-2.0; its pinned identity and private build changes are recorded in the [diagnostic integration record](docs/diagnostic-launch.md). Distribution of a Prism binary must preserve its notices and satisfy the applicable source obligations, including local changes. This repository does not currently reproduce that private dependency build.
+The independently authored Python adapter calls the Prism API. The complete Prism library is not vendored here. The [Prism patch and build instructions](patches/prism/README.md) provide the local change at its pinned revision, under MPL-2.0, with upstream notices retained. Distribution of a Prism binary must preserve its notices and satisfy the applicable source obligations, including local changes. Earlier integration evidence is recorded in the [diagnostic record](docs/diagnostic-launch.md).
 
 ## Reference projects
 

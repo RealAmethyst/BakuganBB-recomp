@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(BattleBrawlersSource LANGUAGES CXX)
 
 # This target contains only independently authored, SDK-free support code.
-# The private generated game and native host are intentionally not build targets.
+# Native integration is opt-in and requires external private inputs.
 find_package(Threads REQUIRED)
 add_library(brawlers_core STATIC src/core/game_speech_queue.cpp)
 target_compile_features(brawlers_core PUBLIC cxx_std_17)
@@ -32,4 +32,9 @@ if(BUILD_TESTING)
             COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_tests.py" --python-only)
     endif()
+endif()
+
+option(BRAWLERS_BUILD_NATIVE "Build the native host using external SDK and generated inputs" OFF)
+if(BRAWLERS_BUILD_NATIVE)
+    include(cmake/NativeGame.cmake)
 endif()

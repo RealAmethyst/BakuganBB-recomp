@@ -1,0 +1,130 @@
+--- a/source/backends/orca.cpp
++++ b/source/backends/orca.cpp
+@@ -9,6 +9,12 @@
+     !defined(__ANDROID__)
+ #ifdef PRISM_HAVE_ORCA
+ #include <array>
++#include <chrono>
++#include <condition_variable>
++#include <cstdlib>
++#include <giomm/cancellable.h>
++#include <mutex>
++#include <thread>
+ #include <functional>
+ #include <giomm/dbusconnection.h>
+ #include <giomm/dbuserror.h>
+@@ -19,6 +25,31 @@
+ #include <vector>
+ 
+ namespace {
++constexpr int kCallTimeoutMs = 500;
++constexpr auto kCallFlags = Gio::DBus::CallFlags::NO_AUTO_START;
++
++Glib::RefPtr<Gio::DBus::Connection> connect_to_existing_session() {
++  const char *address = std::getenv("DBUS_SESSION_BUS_ADDRESS");
++  if (address == nullptr || !std::string_view(address).starts_with("unix:") ||
++      std::string_view(address).find(';') != std::string_view::npos) {
++    return {};
++  }
++  auto cancellable = Gio::Cancellable::create();
++  std::jthread deadline([cancellable](std::stop_token stop) {
++    std::mutex mutex;
++    std::condition_variable_any wake;
++    std::unique_lock lock(mutex);
++    wake.wait_for(lock, stop, std::chrono::milliseconds(kCallTimeoutMs),
++                  [] { return false; });
++    if (!stop.stop_requested())
++      cancellable->cancel();
++  });
++  return Gio::DBus::Connection::create_for_address_sync(
++      address, cancellable,
++      Gio::DBus::ConnectionFlags::AUTHENTICATION_CLIENT |
++          Gio::DBus::ConnectionFlags::MESSAGE_BUS_CONNECTION);
++}
++
+ struct OrcaDialect {
+   const char *bus_name;
+   const char *service_path;
+@@ -41,7 +72,7 @@
+     conn->call_sync(path, d.speech_iface, "ListCommands",
+                     Glib::VariantContainerBase::create_tuple(
+                         std::vector<Glib::VariantBase>{}),
+-                    d.bus_name);
++                    d.bus_name, kCallTimeoutMs, kCallFlags);
+     return true;
+   } catch (const Glib::Error &) {
+     return false;
+@@ -56,7 +87,7 @@
+         Glib::Variant<Glib::ustring>::create("Rate"),
+     });
+     conn->call_sync(path, "org.freedesktop.DBus.Properties", "Get", params,
+-                    d.bus_name);
++                    d.bus_name, kCallTimeoutMs, kCallFlags);
+     return true;
+   } catch (const Glib::Error &) {
+     return false;
+@@ -70,7 +101,7 @@
+         Glib::Variant<Glib::ustring>::create(bus_name));
+     const auto reply =
+         conn->call_sync("/org/freedesktop/DBus", "org.freedesktop.DBus",
+-                        "NameHasOwner", params, "org.freedesktop.DBus");
++                        "NameHasOwner", params, "org.freedesktop.DBus", kCallTimeoutMs, kCallFlags);
+     const auto child = Glib::VariantBase::cast_dynamic<Glib::Variant<bool>>(
+         reply.get_child(0));
+     return child.get();
+@@ -140,7 +171,7 @@
+     features |= SUPPORTS_SPEAK | SUPPORTS_OUTPUT | SUPPORTS_STOP;
+     try {
+       const auto probe_conn =
+-          Gio::DBus::Connection::get_sync(Gio::DBus::BusType::SESSION);
++          connect_to_existing_session();
+       if (probe_conn && detect_orca_dialect(probe_conn).has_value()) {
+         features |= IS_SUPPORTED_AT_RUNTIME;
+       }
+@@ -155,7 +186,7 @@
+       return std::unexpected(BackendError::AlreadyInitialized);
+     }
+     try {
+-      conn = Gio::DBus::Connection::get_sync(Gio::DBus::BusType::SESSION);
++      conn = connect_to_existing_session();
+     } catch (const Glib::Error &) {
+       return std::unexpected(BackendError::BackendNotAvailable);
+     }
+@@ -175,6 +206,9 @@
+   BackendResult<> speak(std::string_view text, bool interrupt) override {
+     if (!conn || dialect == nullptr) {
+       return std::unexpected(BackendError::NotInitialized);
++    }
++    if (!name_has_owner(conn, dialect->bus_name)) {
++      return std::unexpected(BackendError::BackendNotAvailable);
+     }
+     if (interrupt) {
+       if (const auto res = stop(); !res) {
+@@ -187,7 +221,7 @@
+               Glib::ustring(std::string(text.data(), text.size()))));
+       const auto reply =
+           conn->call_sync(dialect->service_path, dialect->service_iface,
+-                          "PresentMessage", params, dialect->bus_name);
++                          "PresentMessage", params, dialect->bus_name, kCallTimeoutMs, kCallFlags);
+       const auto ok = Glib::VariantBase::cast_dynamic<Glib::Variant<bool>>(
+           reply.get_child(0));
+       if (!ok.get()) {
+@@ -206,6 +240,9 @@
+   BackendResult<> stop() override {
+     if (!conn || dialect == nullptr) {
+       return std::unexpected(BackendError::NotInitialized);
++    }
++    if (!name_has_owner(conn, dialect->bus_name)) {
++      return std::unexpected(BackendError::BackendNotAvailable);
+     }
+     try {
+       Glib::VariantContainerBase params;
+@@ -223,7 +260,7 @@
+       }
+       const auto reply =
+           conn->call_sync(speech_path, dialect->speech_iface, method_name,
+-                          params, dialect->bus_name);
++                          params, dialect->bus_name, kCallTimeoutMs, kCallFlags);
+       const auto ok = Glib::VariantBase::cast_dynamic<Glib::Variant<bool>>(
+           reply.get_child(0));
+       if (!ok.get()) {

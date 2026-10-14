@@ -1,57 +1,134 @@
-# Building and testing
+# Building on Linux
 
-## What can be built from this checkout
+## Before you start
 
-The top-level CMake project builds the independent C++ core and synthetic tests. Python checks use a mocked Prism API and synthetic events. These checks require no game files, SDK, graphics device, real screen reader or network downloads. They do not produce a playable game.
+This guide builds the game locally from your own files. It does not download game files or provide a prebuilt game. Keep the game, dependencies, generated code and build output outside this repository. Do not upload the resulting installation or generated files.
 
-**Building or running the native game requires your own copy of the game.** Game files, extracted content, proprietary generated source and native game binaries are not supplied here. Keep them outside this checkout. This project provides no asset acquisition instructions.
+The current target is Linux on a CPU supporting x86-64-v2. Other platforms are not supported by these commands. You need:
 
-## Source-only Linux checks
+- Git, Python 3.9 or newer, CMake 3.25 or newer, Ninja, Make, pkg-config and Binutils (`readelf`).
+- Clang 18 or newer and a C++23 standard library for ReXGlue and the native game. Prism also needs a C23/C++23 toolchain supporting `std::expected` and `std::jthread`.
+- Development libraries providing `glibmm-2.68` and `giomm-2.68`, version 2.68.0 or newer, for Prism.
+- The development dependencies for SDL's Linux window, input and audio backends. Check the SDK configure summary: a successful build with missing platform backends is not proof that your desktop setup is supported.
+- For playing: a Vulkan driver with scalar block layout support. Minimum GPU requirements have not been established.
+- Your game directory, containing `default.xex` and the remaining game files.
 
-Install system Python 3.9 or newer, CMake 3.20 or newer, a C++17-capable compiler, Make, and Bubblewrap (`bwrap`) using your system's development tools. No Python packages are required. The runner uses a system Python under `/usr` or `/bin`; virtual environments elsewhere are not mounted. Bubblewrap must be able to create an unprivileged sandbox; the runner stops if it cannot do so.
+The only supported executable currently has size **11,055,104 bytes** and SHA-256 **`7f47ff62b744239fb3c1b98bb9ca26ab38b3d33cd148bba6d14c03739f7ab29b`**. The generation tool checks this before using the game-specific hooks. Other versions are not automatically compatible. See the [executable baseline](executable-baseline.md).
 
-From the repository root, run:
+These are large builds. Start with two parallel jobs, as below. No step installs system libraries, changes a screen reader, or launches the game automatically.
+
+## 1. Choose working directories
+
+Start in this repository. Set `GAME_DIR` to your existing game directory and choose a new external directory for `WORK`:
+
+```sh
+PROJECT_SOURCE="$(pwd)"
+GAME_DIR="/path/to/your/game-directory"
+WORK="$HOME/brawlers-build"
+mkdir "$WORK"
+```
+
+Use fresh dependency checkouts and build directories. The patch and generation tools reject mismatched source, existing changes or unsupported game files instead of guessing.
+
+## 2. Build the patched SDK
+
+Only open-source dependencies are cloned here. Their versions are pinned; do not substitute a newer SDK without rechecking the integration.
+
+```sh
+git clone --no-checkout https://github.com/rexglue/rexglue-sdk.git "$WORK/rexglue"
+git -C "$WORK/rexglue" checkout --detach c94f5ebdcb3c9d1a460ca48e04f9758448f8d518
+git -C "$WORK/rexglue" submodule update --init --recursive -- \
+  thirdparty/FFmpeg thirdparty/catch2 thirdparty/cli11 thirdparty/fmt \
+  thirdparty/glslang thirdparty/imgui thirdparty/inja thirdparty/libmspack \
+  thirdparty/o1heap thirdparty/sdl3 thirdparty/simde thirdparty/spdlog \
+  thirdparty/spirv-headers thirdparty/spirv-tools thirdparty/tomlplusplus \
+  thirdparty/tracy thirdparty/utfcpp thirdparty/vulkan-headers \
+  thirdparty/vulkan-memory-allocator thirdparty/xxHash
+python3 "$PROJECT_SOURCE/tools/apply_dependency_patches.py" rexglue \
+  --source "$WORK/rexglue"
+cmake --preset linux-amd64 -S "$WORK/rexglue" -B "$WORK/sdk-build" \
+  -DREXGLUE_BUILD_TESTS=OFF -DREXGLUE_ENABLE_TRACY=OFF -DREXGLUE_USE_VULKAN=ON
+cmake --build "$WORK/sdk-build" --config Release \
+  --target rexglue rexgpu-xenos --parallel 2
+```
+
+The SDK writes its executables and libraries to `WORK/rexglue/out/linux-amd64/Release`, even though the CMake build directory is separate. Its [patch guide](../patches/rexglue/README.md) explains the corrections and retained notices.
+
+## 3. Generate and compile the game
+
+```sh
+python3 "$PROJECT_SOURCE/tools/generate_game.py" \
+  --rexglue "$WORK/rexglue/out/linux-amd64/Release/rexglue" \
+  --game-executable "$GAME_DIR/default.xex" \
+  --output "$WORK/translation"
+cmake -S "$PROJECT_SOURCE" -B "$WORK/native-build" -G Ninja \
+  -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTING=OFF -DBRAWLERS_BUILD_NATIVE=ON \
+  -DBRAWLERS_REXGLUE_SOURCE_DIR="$WORK/rexglue" \
+  -DBRAWLERS_REXGLUE_BUILD_DIR="$WORK/sdk-build" \
+  -DBRAWLERS_REXGLUE_OUTPUT_DIR="$WORK/rexglue/out/linux-amd64/Release" \
+  -DBRAWLERS_GENERATED_DIR="$WORK/translation/generated"
+cmake --build "$WORK/native-build" --target battle-brawlers --parallel 2
+```
+
+The translation directory contains private generated game code and generation logs. The native output is under `WORK/native-build/native`. Neither belongs in a commit, issue attachment or release upload.
+
+If generation fails, inspect `translation/codegen.log`. The tool preserves failed output for diagnosis; choose a new output directory for another attempt. Do not bypass an executable identity failure.
+
+## 4. Build screen-reader support
+
+```sh
+git clone --no-checkout https://github.com/ethindp/prism.git "$WORK/prism"
+git -C "$WORK/prism" checkout --detach b68e9c94240cefb1f08b2306c26376e3ab300a7a
+python3 "$PROJECT_SOURCE/tools/apply_dependency_patches.py" prism --source "$WORK/prism"
+cmake -S "$WORK/prism" -B "$WORK/prism-build" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON \
+  -DPRISM_DEPENDENCY_PROVIDER=BUNDLED -DPRISM_BACKEND_DEFAULT=OFF \
+  -DPRISM_ENABLE_ORCA_BACKEND=ON -DPRISM_ENABLE_POWER_MANAGEMENT=OFF \
+  -DPRISM_ENABLE_TESTS=OFF -DPRISM_ENABLE_DEMOS=OFF \
+  -DPRISM_ENABLE_GDEXTENSION=OFF -DPRISM_ENABLE_SHIMS=OFF \
+  -DPRISM_BUILD_WINELIBS=OFF -DPRISM_REGENERATE_DJINNI=OFF -DPRISM_IPO=OFF
+cmake --build "$WORK/prism-build" --target prism --parallel 2
+```
+
+This enables Orca only and prevents automatic speech-service startup. It does not load Prism or test speech. Use a fresh build directory so old backend settings cannot enable standalone speech. See the [Prism patch guide](../patches/prism/README.md) for details and licensing.
+
+## 5. Prepare your local installation
+
+```sh
+python3 -B "$PROJECT_SOURCE/tools/stage_game.py" \
+  --native-build "$WORK/native-build" --prism-build "$WORK/prism-build" \
+  --prism-source "$WORK/prism" --rexglue-source "$WORK/rexglue" \
+  --game-dir "$GAME_DIR" --output "$WORK/game"
+python3 "$WORK/game/launch.py" --check
+```
+
+The staging tool copies the built code, launcher and notices into a new private directory. It links to your existing game directory without copying or modifying it. The destination must be separate from all inputs. Runtime library paths are adjusted only in the copied files.
+
+The check command checks required files without starting the game or speech. When you are ready to play, run:
+
+```sh
+python3 "$WORK/game/launch.py"
+```
+
+Speech goes to an already running Orca. Without one, the launcher remains silent. Writable settings, saves, caches and logs stay under `WORK/game/user-data`. Keep the original game directory available while using this installation.
+
+This produces a local build, not a portable release package. It has not been tested across Linux distributions. A future downloadable application that asks for game files needs separate packaging, compatibility and distribution work.
+
+## Automated code checks
+
+These checks use made-up data rather than running the game, so no game files or SDK are needed. Install system Python 3.9+, CMake 3.20+, a C++17 compiler, Make and Bubblewrap, then run:
 
 ```sh
 python3 tools/run_tests.py
 ```
 
-The runner creates a temporary external build directory, configures and builds the core fixtures, and runs CTest including Python discovery. To retain build output, supply a new external directory:
+Bubblewrap must support unprivileged namespaces. The runner isolates the tests from the desktop, accessibility bus and audio devices. It will not retry without isolation. Use `--build-dir /path/to/new-external-directory` to retain test output.
 
-```sh
-python3 tools/run_tests.py --build-dir /path/to/new-external-test-build
-```
+The default checks cover the shared core, speech policy and launcher. SDK-dependent fixtures remain separate; see [integration.md](integration.md). Passing code checks does not establish graphics, speech or gameplay usability.
 
-The runner isolates runtime, home, configuration, network and device access. It does not mount the live desktop's bus or sockets, load the real Prism library or launch the game. Do not bypass isolation to run accessibility integration checks against a working screen reader.
+## Verification so far
 
-The default suite covers bounded guest-text reads, queue ordering and faults, speech ordering and text edits, mocked Prism handling and Linux process supervision. It does not compile or test SDK-dependent game hooks. Windows and macOS execution are unverified; the Linux test sandbox is not a cross-platform test runner.
+On 2026-10-14, the normal SDK generator, runtime and Vulkan plugin built from the complete public patch series. Fresh game generation retained the verified functions and hooks, and the public CMake target compiled and linked successfully. Prism also built from its published patch. The staged installation passed the check-only preflight without loading Prism or launching the game.
 
-## Native integration requirements and current gap
-
-There is not yet a complete public command that reproduces the native game build. The private diagnostic build uses:
-
-- The executable identity recorded in [executable-baseline.md](executable-baseline.md). Hooks are specific to that verified baseline; another executable is not automatically compatible.
-- ReXGlue revision `c94f5ebdcb3c9d1a460ca48e04f9758448f8d518`, with the [manifest's ordered patches](../patches/rexglue/manifest.json), plus the separately evaluated translation generator. The [SDK patch guide](../patches/rexglue/README.md) records provenance and checks.
-- Private generated translation and image headers, incorporating `config/game_events.toml`. They are not redistributable project source and are not generated by the top-level CMake build.
-- `src/game`, `src/runtime` and the shared core, compiled and linked with the patched SDK and generated image. The verified Linux build preserves strict floating-point behavior and the SDK's required CPU/context settings.
-- A separately built Prism library with standalone TTS backends disabled. The [diagnostic record](diagnostic-launch.md) identifies its revision, local changes and remaining distribution requirements.
-
-The existing private integration recipe and Prism changes still need configurable, source-reviewed build support before a contributor can reproduce the entire application from these instructions. Do not interpret the source-only tests or the presence of hook configuration as proof that this gap is closed. [Issue 6](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/6) tracks source and release boundaries.
-
-SDK-dependent fixtures remain under `tests/native` and `patches/rexglue`. Their prerequisites and prior results are documented in the [integration guide](integration.md) and individual evidence records. They are not silently skipped tests in the default suite; they are separate integration checks requiring the pinned SDK and, in some cases, its build tree.
-
-## Stage launcher sources
-
-This optional step prepares the original Python launcher modules, localization resource, license and provenance notices in the existing flat installation layout:
-
-```sh
-python3 tools/stage_launcher.py /path/to/new-external-launcher-directory
-```
-
-The destination must be empty or nonexistent and outside the repository. Staging copies no game inputs, native binaries or runtime dependencies and does not run the launcher. Do not run `src/platform/linux/launch.py` directly from the checkout: its resource and installation paths are defined relative to the staged launcher.
-
-In a separately prepared private installation, the launcher expects the host and runtime libraries under `bin`, Prism under `lib`, game content under `data`, and writable state under `user-data`. `python3 launch.py --check` checks required files without loading Prism or running the game. A successful file check does not establish speech, graphics or gameplay readiness.
-
-## Before sharing build output
-
-Share source changes and synthetic test results only. Do not upload generated game source, native game binaries, game inputs, caches or private logs. A future runtime release needs its own dependency-license and content review; source-repository publication is not approval for binary distribution.
+This was checked with the pinned dependency sources already available locally, using isolated build environments. Downloading dependencies and following the guide on a clean machine, other Linux distributions, graphics and gameplay still need testing. The SDK and Prism retain upstream compiler warnings; the native application build had no compiler warnings. [Issue 24](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/24) tracks this build work.

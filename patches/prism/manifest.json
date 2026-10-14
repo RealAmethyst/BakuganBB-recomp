@@ -1,0 +1,24 @@
+{
+  "upstream": "https://github.com/ethindp/prism",
+  "revision": "b68e9c94240cefb1f08b2306c26376e3ab300a7a",
+  "version": "0.18.3",
+  "date": "2026-10-14",
+  "status": "local MPL-2.0 adaptation, not submitted or accepted upstream",
+  "license": "MPL-2.0",
+  "sha256": {
+    "LICENSE.prism": "6c98f2f72d40949c1a1a4ef743903fa07719da941dccf1fb7479d1c15f05ab7a",
+    "NOTICE.md": "07704240874dc65186fb476473c2053e10ed37753b32571ba6af2c9b6503eb3d",
+    "NOTICE.prism": "e1f12e422cad5eaee54b0440b9469b84f7bf9d05bcf2a81fc0063e52d2807612",
+    "README.md": "ee3c09bd0d66db4de8cd3816ea85c2c0c5dba7729281b1c5d1a2eeca8227a9f1",
+    "orca-existing-reader.patch": "cb9c41b43b996f40bbac858608f731d1e8e2a5d72d5a5f156172373e4841826f"
+  },
+  "application_order": [
+    "orca-existing-reader.patch"
+  ],
+  "source_sha256": {
+    "source/backends/orca.cpp": "3f520a49c168a18651d8868f26bc8a7bf6817f1b59bc98dab904e63c1309272e"
+  },
+  "patched_source_sha256": {
+    "source/backends/orca.cpp": "8034b18ee058805b5719948218d3a431fd1c6661fbb9e48ec171101ae7f8e077"
+  }
+}

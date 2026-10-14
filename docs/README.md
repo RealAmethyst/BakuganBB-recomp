@@ -18,6 +18,6 @@ These records preserve the investigation sequence. Dated earlier conclusions may
 - [First launch failure](first-launch-failure.md) and [timing contracts](timing-contracts.md).
 - [Story entry and name input](story-entry-freeze.md).
 - [Localization, menus, popups and logo events](localization-consumers.md).
-- [Pinned SDK patches](../patches/rexglue/README.md).
+- [Pinned SDK patches](../patches/rexglue/README.md) and [Prism speech-library patch](../patches/prism/README.md).
 
 Current task status belongs in [GitHub Issues](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues), rather than a second backlog here.
