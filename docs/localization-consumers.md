@@ -1,6 +1,6 @@
 # Localization and console-dialog consumers
 
-Inspection date: 2026-10-14. Owning investigation: [issue 3](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/3).
+Inspection date: 2026-10-14. Owning investigation: [issue 3](https://github.com/RealAmethyst/bb-recomp/issues/3).
 
 ## Findings and limits
 
@@ -132,7 +132,7 @@ Description scheduling in `0x822CEC00` selects bank zero and identifier `0x613 +
 
 ## Verified startup and menu consumers
 
-The subsequent original-instruction and private artwork investigation under [issue 22](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/22) resolves the caption and renderer gaps above. Evidence collections `menu-speech-followup-20261014` and `startup-speech-20261014` retain original instruction exports, bounded resource hashes, UV mappings and inspected images. No reverse-engineering annotations were added. This establishes static sources and integration points, not listening or gameplay acceptance.
+The subsequent original-instruction and private artwork investigation under [issue 22](https://github.com/RealAmethyst/bb-recomp/issues/22) resolves the caption and renderer gaps above. Evidence collections `menu-speech-followup-20261014` and `startup-speech-20261014` retain original instruction exports, bounded resource hashes, UV mappings and inspected images. No reverse-engineering annotations were added. This establishes static sources and integration points, not listening or gameplay acceptance.
 
 ### Main-menu captions, locale and selection
 

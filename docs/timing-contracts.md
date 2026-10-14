@@ -1,6 +1,6 @@
 # Console timing and opening playback
 
-Inspection date: 2026-10-14. Owning investigation: [issue 15](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/15). Shared-clock correction: [issue 16](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/16). POSIX readiness correction: [issue 17](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/17). Remaining guest timeout contracts: [issue 18](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/18).
+Inspection date: 2026-10-14. Owning investigation: [issue 15](https://github.com/RealAmethyst/bb-recomp/issues/15). Shared-clock correction: [issue 16](https://github.com/RealAmethyst/bb-recomp/issues/16). POSIX readiness correction: [issue 17](https://github.com/RealAmethyst/bb-recomp/issues/17). Remaining guest timeout contracts: [issue 18](https://github.com/RealAmethyst/bb-recomp/issues/18).
 
 ## Observations and scope
 
@@ -10,7 +10,7 @@ The requirement is a faithful console timing foundation before frame-rate change
 
 ## Diagnostic .3 user retest
 
-The next user-controlled test still reported opening desynchronization. Main-menu navigation additionally produced a prompt cursor cue but a separate image-change effect starting late or playing after navigation stopped. The host exited normally with code zero. The original menu trigger is being traced under [issue 20](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/20); a common cause with movie delay is not assumed.
+The next user-controlled test still reported opening desynchronization. Main-menu navigation additionally produced a prompt cursor cue but a separate image-change effect starting late or playing after navigation stopped. The host exited normally with code zero. The original menu trigger is being traced under [issue 20](https://github.com/RealAmethyst/bb-recomp/issues/20); a common cause with movie delay is not assumed.
 
 Across 244 diagnostic update windows, host elapsed time totals 244.021996 seconds, the guest counter 244.023269 seconds, and supplied update deltas 244.023270 seconds. The instrumented update-container entry runs 5,502 to 5,602 times per window; this is not rendered frame rate or proof that every gameplay task runs that often.
 
@@ -18,7 +18,7 @@ Movie ID four reaches a sampled requested video timestamp of 24,966 milliseconds
 
 The opening interval has about 10.53 guest GPU swap requests per second and about 8,182.44 accepted Vulkan presentations per second. There are no placeholder skips or new outdated-swapchain results within that interval. Across the recorded presentation window, 1,951,428 acceptances over 243.140 seconds represent about 8,025.93 per second. These repeated host presentations are not game frame production or physical scanout.
 
-Source inspection finds an always-registered achievement notification dialog whose empty queue draws nothing, but whose presence keeps `ImGuiDrawer::Draw` requesting continuous UI repaint. `Presenter::WaitForUITick` has no Linux pacing implementation. The SDL paint loop and immediate presentation therefore permit continuous idle host repaint. [Issue 19](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/19) owns a focused correction. The exact contribution of this wasted work versus unoptimized translated execution remains unmeasured.
+Source inspection finds an always-registered achievement notification dialog whose empty queue draws nothing, but whose presence keeps `ImGuiDrawer::Draw` requesting continuous UI repaint. `Presenter::WaitForUITick` has no Linux pacing implementation. The SDL paint loop and immediate presentation therefore permit continuous idle host repaint. [Issue 19](https://github.com/RealAmethyst/bb-recomp/issues/19) owns a focused correction. The exact contribution of this wasted work versus unoptimized translated execution remains unmeasured.
 
 The SDL output consumes already-mixed six-channel PCM in 256-sample blocks at 48 kHz. It has no separate cursor/image-effect identity. Eight default producer credits represent approximately 42.667 milliseconds of guest PCM ahead if each guest callback submits one block; this is not a hard queue-size or physical latency bound. Credits return when data enters SDL, and downstream device buffering is unmeasured. No audio submission errors are logged. Selective cue lateness suggests an upstream event/scheduling difference, but does not prove one.
 

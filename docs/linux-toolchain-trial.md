@@ -1,6 +1,6 @@
 # Linux static recompilation toolchain trial
 
-Inspection date: 2026-10-14. Owning investigation: [issue 4](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/4).
+Inspection date: 2026-10-14. Owning investigation: [issue 4](https://github.com/RealAmethyst/bb-recomp/issues/4).
 
 ## Unmodified baseline result
 
@@ -51,7 +51,7 @@ Four `BitStream::Write` tests explicitly skip: byte-aligned writes, preservation
 
 ## Verified candidate fixes
 
-A separate checkout at the same pinned revision now contains two focused candidate changes: [clock range, issue 7](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/7), and [depfile expectations, issue 8](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/8). The original baseline source and build remain unchanged.
+A separate checkout at the same pinned revision now contains two focused candidate changes: [clock range, issue 7](https://github.com/RealAmethyst/bb-recomp/issues/7), and [depfile expectations, issue 8](https://github.com/RealAmethyst/bb-recomp/issues/8). The original baseline source and build remain unchanged.
 
 The separate [candidate patches, license and hash manifest](../patches/rexglue/README.md) are retained locally. Both apply cleanly to the pinned baseline. Dependencies were copied from its pinned source folders; their copied `.git` pointers are not independently initialized submodule repositories. Candidate status therefore uses explicit file diffs or ignores submodule metadata. No dependency upgrade was made.
 

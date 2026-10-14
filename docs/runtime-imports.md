@@ -1,6 +1,6 @@
 # Executable imports and candidate runtime coverage
 
-Inspection date: 2026-10-14. Authoritative work item: [runtime investigation, issue 2](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/2).
+Inspection date: 2026-10-14. Authoritative work item: [runtime investigation, issue 2](https://github.com/RealAmethyst/bb-recomp/issues/2).
 
 ## Conclusion
 

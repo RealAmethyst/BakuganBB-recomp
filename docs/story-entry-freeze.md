@@ -1,6 +1,6 @@
 # Story entry and character-creator input
 
-Inspection date: 2026-10-14. Owning work: [21](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/21); accessibility work: [issue 5](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/5). Build identity and opening timing are in [timing contracts](timing-contracts.md).
+Inspection date: 2026-10-14. Owning work: [21](https://github.com/RealAmethyst/bb-recomp/issues/21); accessibility work: [issue 5](https://github.com/RealAmethyst/bb-recomp/issues/5). Build identity and opening timing are in [timing contracts](timing-contracts.md).
 
 ## User result
 
@@ -42,7 +42,7 @@ Two passive wrappers in `src/game/native_dialogs.cpp` record keyboard dispatch/r
 
 The [keyboard runtime patch and fixture](../patches/rexglue/README.md) own the candidate source. Tests execute actual extracted dialog/completion code with pinned ImGui core, synthetic input and sanitizer checks; a separate before/after test reproduces the wrong cancellation result. Launcher/speech tests cover announcement order, edits, invalid data, absent readers and log redaction. These checks do not establish live speech, physical keyboard routing, character-creator continuation or regression-free gameplay.
 
-The name-entry candidate was installed as `diagnostic-20261014.5`, with `.4` backed up. The [launch record](diagnostic-launch.md) owns binary identities and final offline check results. In the subsequent user-controlled test, the tester confirms the reported name-entry blocker is resolved and the interaction works. This general confirmation does not separately establish every cancellation, Unicode or later gameplay case. Issue 21 is closed. Startup, option-message and main-menu narration is now installed as `.6`, with `.5` backed up, under [issue 22](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/22), awaiting listening verification. Recovered menu behavior and event contracts are recorded in [localization consumers](localization-consumers.md).
+The name-entry candidate was installed as `diagnostic-20261014.5`, with `.4` backed up. The [launch record](diagnostic-launch.md) owns binary identities and final offline check results. In the subsequent user-controlled test, the tester confirms the reported name-entry blocker is resolved and the interaction works. This general confirmation does not separately establish every cancellation, Unicode or later gameplay case. Issue 21 is closed. Startup, option-message and main-menu narration is now installed as `.6`, with `.5` backed up, under [issue 22](https://github.com/RealAmethyst/bb-recomp/issues/22), awaiting listening verification. Recovered menu behavior and event contracts are recorded in [localization consumers](localization-consumers.md).
 
 ## Remaining direction
 

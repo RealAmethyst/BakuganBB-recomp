@@ -1,6 +1,6 @@
 # First private native build: evidence and testing gates
 
-Inspection date: 2026-10-14. Owning investigation: [issue 4](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/4), under [epic 1](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/1).
+Inspection date: 2026-10-14. Owning investigation: [issue 4](https://github.com/RealAmethyst/bb-recomp/issues/4), under [epic 1](https://github.com/RealAmethyst/bb-recomp/issues/1).
 
 ## Result and boundaries
 
@@ -14,7 +14,7 @@ Pinned ReXGlue revision: `c94f5ebdcb3c9d1a460ca48e04f9758448f8d518`. The first o
 
 In `src/codegen/phase_gapfill.cpp`, an unconditional relative branch splits a linear gap segment only when its target is already a registered callable. A backward exit to an earlier unregistered target can absorb a following leaf into that segment; discovery stops at the preceding exit and misses the leaf. If the segment begins inside an already registered owner, it may instead be skipped wholesale. Later branches into the missing leaf fail validation.
 
-The [candidate patch](../patches/rexglue/gapfill-backward-exit.patch) also splits when the branch target precedes the current linear segment, while retaining the own-entry exception. This is a partitioning heuristic, not proof that every backward exit is a semantic tail call. No game addresses, forced validation, silent no-ops or error suppression were added. [Local candidate verification, issue 9](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/9).
+The [candidate patch](../patches/rexglue/gapfill-backward-exit.patch) also splits when the branch target precedes the current linear segment, while retaining the own-entry exception. This is a partitioning heuristic, not proof that every backward exit is a semantic tail call. No game addresses, forced validation, silent no-ops or error suppression were added. [Local candidate verification, issue 9](https://github.com/RealAmethyst/bb-recomp/issues/9).
 
 Verification:
 
@@ -44,7 +44,7 @@ The [Xenia instruction emitter](https://github.com/xenia-project/xenia/blob/95a5
 
 A strict inventory of all 68 emitted pack occurrences found 44 type-5/mask-2/shift-2, 20 type-5/mask-3/shift-0, and two each of type-0/mask-1/shift-3 and type-3/mask-1/shift-3. None aliases source and destination. No emitted type-5 instruction uses mask 1 or shift 3. Generic defects in those combinations must not be presented as reached target failures.
 
-A separate original 24-case experiment exercises masks 1/2/3, shifts 0–3, and aliased/distinct registers through the actual SDK generator and sanitized native execution. Results: **8 pass, 10 value/preservation failures, 6 bounds violations stopped by UBSan**. This confirms ignored mask-1 preservation, source clobbering under aliasing and shift-3 array overflow. Both distinct-register type-5 forms emitted by this target pass their ordinary-value controls. [Issue 11](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/11) records these generic SDK defects; no fix was implemented. NaN, infinity, signed zero, subnormals and general rounding boundaries remain untested.
+A separate original 24-case experiment exercises masks 1/2/3, shifts 0–3, and aliased/distinct registers through the actual SDK generator and sanitized native execution. Results: **8 pass, 10 value/preservation failures, 6 bounds violations stopped by UBSan**. This confirms ignored mask-1 preservation, source clobbering under aliasing and shift-3 array overflow. Both distinct-register type-5 forms emitted by this target pass their ordinary-value controls. [Issue 11](https://github.com/RealAmethyst/bb-recomp/issues/11) records these generic SDK defects; no fix was implemented. NaN, infinity, signed zero, subnormals and general rounding boundaries remain untested.
 
 All 216 emitted builtin traps are switch-range guards. There are no generated null-target traps, debugtraps or REX_UNIMPLEMENTED markers in the 149 C++ units. These observations do not prove guards are unreachable or establish all instruction semantics. The unusually large function partition warning also did not prevent compilation.
 
@@ -64,7 +64,7 @@ An original CPU-only probe generated eight SDK-authored depth helper shaders, wi
 
 `SystemConstants.user_clip_planes` begins at byte 28. The Uniform Block uses host offsets directly, despite a std140 comment. The device code enables scalarBlockLayout only when available on the Vulkan 1.2 path, without requiring it for accepted devices; its earlier-version path does not enable the extension. Default render-target initialization uses these helpers. This is an undeclared portable-device requirement, **not an observed failure on the development GPU**. No Vulkan instance or physical device was queried.
 
-[Issue 10](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/10) tracks the choice between consistently requiring/enabling scalar layout and changing the complete uniform ABI. An ABI change must account for host offsets and shader-cache compatibility. No policy or fix has been adopted.
+[Issue 10](https://github.com/RealAmethyst/bb-recomp/issues/10) tracks the choice between consistently requiring/enabling scalar layout and changing the complete uniform ABI. An ABI change must account for host offsets and shader-cache compatibility. No policy or fix has been adopted.
 
 Pinned source: `include/rex/graphics/pipeline/shader/spirv_translator.h:204`; `src/graphics/pipeline/shader/spirv_translator.cpp:259-329`; `src/ui/vulkan/vulkan_device.cpp:53-59,172-244,303-341,648-652`; `src/graphics/vulkan/pipeline_cache.cpp:287-340`.
 

@@ -1,6 +1,6 @@
 # First private diagnostic launch
 
-Inspection date: 2026-10-14. Owning task: [issue 12](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/12), under [issue 4](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/4). This follows the [first native build](first-build-gates.md).
+Inspection date: 2026-10-14. Owning task: [issue 12](https://github.com/RealAmethyst/bb-recomp/issues/12), under [issue 4](https://github.com/RealAmethyst/bb-recomp/issues/4). This follows the [first native build](first-build-gates.md).
 
 ## Scope and speech decision
 
@@ -10,7 +10,7 @@ The accessibility designer selected automatic startup/failure speech through Pri
 
 ## Save, popup and logo-timing follow-up
 
-Current private build: `diagnostic-20261014.7`, installed with `.6` backed up under [issue 22](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/22). It adds the native save picker's final formatted name/date/play-time text and displayed hints; shared native one-choice/two-choice popup body, actual selection and hints; and caption-visible startup logo cues. No save-screen heading is invented. Native game input and the deletion popup's initial No selection are preserved.
+Current private build: `diagnostic-20261014.7`, installed with `.6` backed up under [issue 22](https://github.com/RealAmethyst/bb-recomp/issues/22). It adds the native save picker's final formatted name/date/play-time text and displayed hints; shared native one-choice/two-choice popup body, actual selection and hints; and caption-visible startup logo cues. No save-screen heading is invented. Native game input and the deletion popup's initial No selection are preserved.
 
 Logo narration now follows actual compressed-picture identity through decoder reordering, picture copies, queued frames and successful drawing. It speaks only inside privately verified readable intervals. Loading, first submission, wall-clock delays and counted draw attempts do not determine the cue. Normal startup and reset behavior were traced separately. The [localization record](localization-consumers.md) owns all original consumers, addresses and remaining limits.
 
@@ -26,7 +26,7 @@ Status: awaiting user-controlled listening and controller checks on `.7`. Check 
 
 ## Startup and menu speech candidate
 
-Previous private build: `diagnostic-20261014.6`, installed with `.5` backed up under [issue 22](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/22). It adds verified startup-logo artwork wording, title/prompt, actual host option-message text and focused choices, and the five main-menu captions/descriptions/positions with opening hints. The [localization record](localization-consumers.md) owns original behavior, recovered transitions and remaining consumer gaps. The project instructions now explicitly treat game understanding and reusable documentation as core deliverables for future mod support.
+Previous private build: `diagnostic-20261014.6`, installed with `.5` backed up under [issue 22](https://github.com/RealAmethyst/bb-recomp/issues/22). It adds verified startup-logo artwork wording, title/prompt, actual host option-message text and focused choices, and the five main-menu captions/descriptions/positions with opening hints. The [localization record](localization-consumers.md) owns original behavior, recovered transitions and remaining consumer gaps. The project instructions now explicitly treat game understanding and reusable documentation as core deliverables for future mod support.
 
 Fourteen original instruction events replace recurring menu/title-state reads and repeated widget-record traversal. Native rendering captures only owned, uncached text. A bounded output worker serializes copied events outside runtime critical locks. The runtime's guarded-copy API synchronizes mapping validation and copying; it does not replace ownership evidence. Screen wording and delayed-item/hint policy remain in the separate launcher layer.
 
