@@ -1,0 +1,33 @@
+--- a/src/core/threading_posix.cpp
++++ b/src/core/threading_posix.cpp
+@@ -1171,7 +1171,8 @@
+       return WaitResult::kUserCallback;
+     }
+     if (HasAlertableTimeoutElapsed(deadline)) {
+-      return WaitResult::kTimeout;
++      // An expired deadline still permits an immediately satisfied wait.
++      return posix_wait_handle->condition().Wait(std::chrono::milliseconds::zero());
+     }
+     auto result = posix_wait_handle->condition().Wait(ComputeAlertableWaitTimeout(deadline));
+     if (result != WaitResult::kTimeout) {
+@@ -1203,7 +1204,8 @@
+       return WaitResult::kUserCallback;
+     }
+     if (HasAlertableTimeoutElapsed(deadline)) {
+-      return WaitResult::kTimeout;
++      // An expired deadline still permits an immediately satisfied wait.
++      return posix_wait_handle_to_wait_on->condition().Wait(std::chrono::milliseconds::zero());
+     }
+     result = posix_wait_handle_to_wait_on->condition().Wait(ComputeAlertableWaitTimeout(deadline));
+     if (result != WaitResult::kTimeout) {
+@@ -1235,7 +1237,9 @@
+       return std::make_pair(WaitResult::kUserCallback, 0);
+     }
+     if (HasAlertableTimeoutElapsed(deadline)) {
+-      return std::make_pair(WaitResult::kTimeout, 0);
++      // Inspect and consume ready objects under the existing condition locks.
++      return PosixConditionBase::WaitMultiple(std::vector<PosixConditionBase*>(conditions),
++                                              wait_all, std::chrono::milliseconds::zero());
+     }
+     auto result = PosixConditionBase::WaitMultiple(std::vector<PosixConditionBase*>(conditions),
+                                                    wait_all, ComputeAlertableWaitTimeout(deadline));

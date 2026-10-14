@@ -1,0 +1,52 @@
+--- a/src/codegen/builders/context.cpp
++++ b/src/codegen/builders/context.cpp
+@@ -281,7 +281,7 @@
+ 
+   // Use classifyTarget for consistent branch classification
+   // false = branch instruction (not a call), so own-base means loop back
+-  auto kind = graph().classifyTarget(target, base, false);
++  auto kind = graph().classifyTarget(target, fn.base(), false);
+ 
+   switch (kind) {
+     case TargetKind::InternalLabel:
+--- a/src/codegen/builders/control_flow.cpp
++++ b/src/codegen/builders/control_flow.cpp
+@@ -29,7 +29,7 @@
+ 
+   // Use graph to classify the target - handles thunks that branch to nearby functions
+   // false = branch instruction (not a call), so own-base means loop back
+-  auto kind = ctx.graph().classifyTarget(target, ctx.base, false);
++  auto kind = ctx.graph().classifyTarget(target, ctx.fn.base(), false);
+ 
+   switch (kind) {
+     case TargetKind::InternalLabel:
+@@ -67,7 +67,7 @@
+ 
+   // Use graph to classify the target
+   // true = call instruction, so own-base means recursive call (not loop back)
+-  auto kind = ctx.graph().classifyTarget(target, ctx.base, true);
++  auto kind = ctx.graph().classifyTarget(target, ctx.fn.base(), true);
+ 
+   switch (kind) {
+     case TargetKind::InternalLabel:
+@@ -138,7 +138,7 @@
+         continue;
+       }
+ 
+-      auto kind = ctx.graph().classifyTarget(label, ctx.base, false);
++      auto kind = ctx.graph().classifyTarget(label, ctx.fn.base(), false);
+       switch (kind) {
+         case TargetKind::InternalLabel:
+           ctx.println("\t\tgoto loc_{:X};", label);
+--- a/include/rex/codegen/function_graph.h
++++ b/include/rex/codegen/function_graph.h
+@@ -185,7 +185,8 @@
+ 
+   // Classify a branch target for code generation.
+   // target: address being branched to
+-  // callerAddr: address of the branch instruction
++  // callerAddr: address used to locate the caller; pass its function entry when known.
++  // Instruction lookup can be ambiguous for discontiguous function ownership.
+   // isCallInstruction: true for bl (expects return), false for b (no return)
+   // Returns how the target should be treated during code generation.
+   TargetKind classifyTarget(uint32_t target, uint32_t callerAddr, bool isCallInstruction) const;

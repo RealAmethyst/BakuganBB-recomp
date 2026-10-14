@@ -1,0 +1,228 @@
+diff --git a/include/rex/chrono/chrono.h b/include/rex/chrono/chrono.h
+index d876846..46609e9 100644
+--- a/include/rex/chrono/chrono.h
++++ b/include/rex/chrono/chrono.h
+@@ -72,19 +72,20 @@ struct NtSystemClock {
+ 
+   // To convert XSystemClock to sys, do clock_cast<WinSystemTime>(tp) first
+   // Only available for Host domain (Guest time must be converted via clock_cast)
+-  static constexpr std::chrono::system_clock::time_point to_sys(const time_point& tp)
++  // Keep NT precision rather than the host clock's native duration. In particular,
++  // signed 64-bit nanoseconds cannot represent the NT epoch on Linux.
++  // Absolute conversions require FILETIME values in [0, INT64_MAX]. Converting
++  // the result to system_clock::time_point is the caller's range responsibility.
++  static constexpr std::chrono::sys_time<duration> to_sys(const time_point& tp)
+     requires(domain_ == Domain::Host)
+   {
+-    using sys_duration = std::chrono::system_clock::duration;
+-    using sys_time = std::chrono::system_clock::time_point;
+-
+-    auto dp = tp;
+-    dp += unix_epoch_delta();
+-    auto cdp = std::chrono::time_point_cast<sys_duration>(dp);
+-    return sys_time{cdp.time_since_epoch()};
++    return std::chrono::sys_time<duration>{tp.time_since_epoch() + unix_epoch_delta()};
+   }
+ 
+-  static constexpr time_point from_sys(const std::chrono::system_clock::time_point& tp)
++  // The input must convert to an absolute FILETIME in [0, INT64_MAX]. Finer
++  // durations retain the existing truncation toward zero at 100-nanosecond precision.
++  template <typename Duration>
++  static constexpr time_point from_sys(const std::chrono::sys_time<Duration>& tp)
+     requires(domain_ == Domain::Host)
+   {
+     auto ctp = std::chrono::time_point_cast<duration>(tp);
+diff --git a/src/kernel/xboxkrnl/xboxkrnl_rtl.cpp b/src/kernel/xboxkrnl/xboxkrnl_rtl.cpp
+index 8b862fc..4565c4a 100644
+--- a/src/kernel/xboxkrnl/xboxkrnl_rtl.cpp
++++ b/src/kernel/xboxkrnl/xboxkrnl_rtl.cpp
+@@ -480,9 +480,9 @@ void RtlTimeToTimeFields_entry(mapped_u64 time_ptr, ppc_ptr_t<X_TIME_FIELDS> tim
+ // https://docs.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/nf-wdm-rtltimefieldstotime
+ u32 RtlTimeFieldsToTime_entry(ppc_ptr_t<X_TIME_FIELDS> time_fields_ptr, mapped_u64 time_ptr) {
+   using rex::chrono::WinSystemClock;
+-  if (time_fields_ptr->year < 1601 || time_fields_ptr->month < 1 || time_fields_ptr->month > 12 ||
+-      time_fields_ptr->day < 1 || time_fields_ptr->day > 31 || time_fields_ptr->hour > 23 ||
+-      time_fields_ptr->minute > 59 || time_fields_ptr->second > 59 ||
++  if (time_fields_ptr->year < 1601 || time_fields_ptr->year > 32767 || time_fields_ptr->month < 1 ||
++      time_fields_ptr->month > 12 || time_fields_ptr->day < 1 || time_fields_ptr->day > 31 ||
++      time_fields_ptr->hour > 23 || time_fields_ptr->minute > 59 || time_fields_ptr->second > 59 ||
+       time_fields_ptr->milliseconds > 999) {
+     return 0;
+   }
+@@ -494,11 +494,17 @@ u32 RtlTimeFieldsToTime_entry(ppc_ptr_t<X_TIME_FIELDS> time_fields_ptr, mapped_u
+     return 0;
+   }
+   auto dp = static_cast<std::chrono::sys_days>(year_month_day);
+-  std::chrono::system_clock::time_point time = dp;
++  std::chrono::sys_time<std::chrono::milliseconds> time = dp;
+   time += std::chrono::hours{time_fields_ptr->hour};
+   time += std::chrono::minutes{time_fields_ptr->minute};
+   time += std::chrono::seconds{time_fields_ptr->second};
+   time += std::chrono::milliseconds{time_fields_ptr->milliseconds};
++  // Validate before converting milliseconds to the signed NT tick duration.
++  auto max_time = std::chrono::floor<std::chrono::milliseconds>(
++      WinSystemClock::to_sys(WinSystemClock::time_point::max()));
++  if (time > max_time) {
++    return 0;
++  }
+   *time_ptr = WinSystemClock::to_file_time(WinSystemClock::from_sys(time));
+   return 1;
+ }
+diff --git a/tests/unit/core/chrono_test.cpp b/tests/unit/core/chrono_test.cpp
+index dbd4caa..da5a7de 100644
+--- a/tests/unit/core/chrono_test.cpp
++++ b/tests/unit/core/chrono_test.cpp
+@@ -10,12 +10,20 @@
+  *              See LICENSE file in the project root for full license text.
+  */
+ 
++#include <algorithm>
++#include <array>
+ #include <chrono>
+ #include <cstdint>
++#include <limits>
++#include <type_traits>
+ 
+ #include <catch2/catch_test_macros.hpp>
+ 
+ #include <rex/chrono/chrono.h>
++#include <rex/ppc/context.h>
++
++extern "C" REX_FUNC(__imp__RtlTimeFieldsToTime);
++extern "C" REX_FUNC(__imp__RtlTimeToTimeFields);
+ 
+ using rex::chrono::WinSystemClock;
+ 
+@@ -223,16 +231,25 @@ TEST_CASE("calendar decomposition: 2021-01-01", "[chrono]") {
+ 
+ // Recompose fields to FILETIME exactly as RtlTimeFieldsToTime_entry does
+ static uint64_t recompose(int y, unsigned m, unsigned d, int hour, int min, int sec, int ms) {
++  if (y < 1601 || y > 32767 || hour < 0 || hour > 23 || min < 0 || min > 59 || sec < 0 ||
++      sec > 59 || ms < 0 || ms > 999) {
++    return 0;
++  }
+   auto ymd =
+       std::chrono::year_month_day{std::chrono::year{y}, std::chrono::month{m}, std::chrono::day{d}};
+   if (!ymd.ok())
+     return 0;
+   auto dp = static_cast<std::chrono::sys_days>(ymd);
+-  std::chrono::system_clock::time_point time = dp;
++  std::chrono::sys_time<std::chrono::milliseconds> time = dp;
+   time += std::chrono::hours{hour};
+   time += std::chrono::minutes{min};
+   time += std::chrono::seconds{sec};
+   time += std::chrono::milliseconds{ms};
++  auto max_time = std::chrono::floor<std::chrono::milliseconds>(
++      WinSystemClock::to_sys(WinSystemClock::time_point::max()));
++  if (time > max_time) {
++    return 0;
++  }
+   return WinSystemClock::to_file_time(WinSystemClock::from_sys(time));
+ }
+ 
+@@ -315,3 +332,105 @@ TEST_CASE("weekday c_encoding returns 0=Sunday through 6=Saturday", "[chrono]")
+   // 2000-01-01 is Saturday (6)
+   CHECK(weekday{sys_days{year{2000} / month{1} / day{1}}}.c_encoding() == 6);
+ }
++
++TEST_CASE("system conversion preserves the absolute NT tick range", "[chrono]") {
++  using namespace std::chrono;
++  using rex::chrono::hundrednanoseconds;
++  constexpr auto max_ticks = std::numeric_limits<int64_t>::max();
++  constexpr auto first = WinSystemClock::to_sys(WinSystemClock::from_file_time(0));
++  static_assert(std::is_same_v<typename decltype(first)::duration, hundrednanoseconds>);
++  STATIC_REQUIRE(first.time_since_epoch().count() == -116444736000000000LL);
++  constexpr auto last = WinSystemClock::to_sys(WinSystemClock::from_file_time(max_ticks));
++  STATIC_REQUIRE(last.time_since_epoch().count() == 9106927300854775807LL);
++  for (uint64_t ft : {uint64_t{0}, uint64_t{1}, kFtUnixEpoch - 1, kFtUnixEpoch, kFtUnixEpoch + 1,
++                      uint64_t{max_ticks - 1}, uint64_t{max_ticks}}) {
++    CHECK(WinSystemClock::to_file_time(WinSystemClock::from_sys(
++              WinSystemClock::to_sys(WinSystemClock::from_file_time(ft)))) == ft);
++  }
++}
++
++TEST_CASE("system conversion accepts different source precisions", "[chrono]") {
++  using namespace std::chrono;
++  CHECK(WinSystemClock::to_file_time(WinSystemClock::from_sys(sys_seconds{seconds{-1}})) ==
++        kFtUnixEpoch - 10000000);
++  CHECK(WinSystemClock::to_file_time(WinSystemClock::from_sys(
++            sys_time<microseconds>{microseconds{1}})) == kFtUnixEpoch + 10);
++  CHECK(WinSystemClock::to_file_time(
++            WinSystemClock::from_sys(sys_time<nanoseconds>{nanoseconds{199}})) == kFtUnixEpoch + 1);
++  CHECK(WinSystemClock::to_file_time(WinSystemClock::from_sys(
++            sys_time<nanoseconds>{nanoseconds{-199}})) == kFtUnixEpoch - 1);
++  CHECK(WinSystemClock::to_file_time(
++            WinSystemClock::from_sys(sys_time<nanoseconds>{nanoseconds{-99}})) == kFtUnixEpoch);
++  CHECK(WinSystemClock::to_file_time(WinSystemClock::from_sys(system_clock::time_point{})) ==
++        kFtUnixEpoch);
++}
++
++TEST_CASE("calendar conversion covers dates beyond native nanoseconds", "[chrono]") {
++  // Gregorian day arithmetic gives these independent absolute NT millisecond values.
++  CHECK(recompose(9999, 12, 31, 23, 59, 59, 999) == 2650467743999990000ULL);
++  CHECK(recompose(30828, 9, 14, 2, 48, 5, 477) == 9223372036854770000ULL);
++  auto last = decompose(std::numeric_limits<int64_t>::max());
++  CHECK(last.year == 30828);
++  CHECK(last.month == 9);
++  CHECK(last.day == 14);
++  CHECK(last.hours == 2);
++  CHECK(last.minutes == 48);
++  CHECK(last.seconds == 5);
++  CHECK(last.milliseconds == 477);
++  CHECK(recompose(30828, 9, 14, 2, 48, 5, 478) == 0);
++  CHECK(recompose(32767, 12, 31, 0, 0, 0, 0) == 0);
++  CHECK(recompose(32768, 1, 1, 0, 0, 0, 0) == 0);
++  CHECK(recompose(1600, 12, 31, 23, 59, 59, 999) == 0);
++}
++
++TEST_CASE("Rtl time exports accept absolute bounds and preserve output on invalid fields",
++          "[chrono][kernel]") {
++  struct Sample {
++    std::array<uint16_t, 7> fields;
++    bool valid;
++    uint64_t expected;
++  };
++  const Sample samples[] = {
++      {{1601, 1, 1, 0, 0, 0, 0}, true, 0},
++      {{1970, 1, 1, 0, 0, 0, 0}, true, kFtUnixEpoch},
++      {{2000, 2, 29, 0, 0, 0, 0}, true, kFtLeapDay},
++      {{9999, 12, 31, 23, 59, 59, 999}, true, 2650467743999990000ULL},
++      {{30828, 9, 14, 2, 48, 5, 477}, true, 9223372036854770000ULL},
++      {{30828, 9, 14, 2, 48, 5, 478}, false, 0},
++      {{32767, 12, 31, 0, 0, 0, 0}, false, 0},
++      {{32768, 1, 1, 0, 0, 0, 0}, false, 0},
++      {{65535, 1, 1, 0, 0, 0, 0}, false, 0},
++      {{1600, 12, 31, 23, 59, 59, 999}, false, 0},
++      {{2001, 2, 29, 0, 0, 0, 0}, false, 0},
++      {{2000, 1, 1, 24, 0, 0, 0}, false, 0},
++      {{2000, 1, 1, 0, 0, 0, 1000}, false, 0},
++  };
++  for (const auto& sample : samples) {
++    CAPTURE(sample.fields);
++    alignas(16) std::array<uint8_t, 64> memory{};
++    for (size_t i = 0; i < sample.fields.size(); ++i) {
++      memory[16 + i * 2] = static_cast<uint8_t>(sample.fields[i] >> 8);
++      memory[17 + i * 2] = static_cast<uint8_t>(sample.fields[i]);
++    }
++    std::fill(memory.begin() + 40, memory.begin() + 48, 0xA5);
++    PPCContext context{};
++    context.r3.u32 = 16;
++    context.r4.u32 = 40;
++    __imp__RtlTimeFieldsToTime(context, memory.data());
++    CHECK(context.r3.u32 == static_cast<uint32_t>(sample.valid));
++    uint64_t result = 0;
++    for (size_t i = 40; i < 48; ++i) {
++      result = (result << 8) | memory[i];
++    }
++    CHECK(result == (sample.valid ? sample.expected : 0xA5A5A5A5A5A5A5A5ULL));
++    if (sample.valid) {
++      std::fill(memory.begin() + 16, memory.begin() + 32, 0);
++      context.r3.u32 = 40;
++      context.r4.u32 = 16;
++      __imp__RtlTimeToTimeFields(context, memory.data());
++      for (size_t i = 0; i < sample.fields.size(); ++i) {
++        CHECK(((uint16_t{memory[16 + i * 2]} << 8) | memory[17 + i * 2]) == sample.fields[i]);
++      }
++    }
++  }
++}

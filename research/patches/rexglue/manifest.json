@@ -1,0 +1,40 @@
+{
+  "upstream": "https://github.com/rexglue/rexglue-sdk",
+  "revision": "c94f5ebdcb3c9d1a460ca48e04f9758448f8d518",
+  "date": "2026-10-14",
+  "status": "local evaluation patches, not adopted or submitted upstream",
+  "sha256": {
+    "chrono-range.patch": "84662d2756a16e0f6e7706203b477fb369aa99784aaabb593b6cbd2c1167bb85",
+    "depfile-expectations.patch": "68ca364f2c0dcee6f1bd74d7a490e5a2eb22d0fd41f8fae04f8ac2373aa4b9c8",
+    "LICENSE.rexglue": "8e065be1da2ff9a16b1f063d4636d8b67e6a654bb90583ea4332e66ac421bb18",
+    "gapfill-backward-exit.patch": "c35cf3f2e0e1250e5908186ecbec3af234968f50dcb13896ad3ea754c2cc66f1",
+    "gapfill-regressions.cpp": "a3ba103001c16d42abe89fa669278e17903ab3a034b7cf1db6e06a4ca05b1343",
+    "scalar-layout.patch": "a1411bf18d342b1c30d3ed8057a542bd0a04e5da7182bf811e8dea7a2d8cdcac",
+    "scalar-layout-regressions.cpp": "7489e25b973e64a8a9f8ade0489ccbdabb884139b2a42f2540ce866e2cedba20",
+    "synthetic-xma.c": "e702764cbac08ca4861ece09f1bd57f2faa8661574a01de41686b265cab89954",
+    "gapfill-indirect-terminator.patch": "d747a3dce96e6e9629b41ca4e5cf03df1609b8ac611710f961ce9e2df16fc991",
+    "emitting-owner.patch": "79181c4e50c9ad8084c651c151e764c4989b3d193dfc1208edcc545073f65073",
+    "emitting-owner-regressions.cpp": "db83daf339ba03ac83cc56dc381b4cca24badaafed7e9cd5ff72917054ccfb1e",
+    "clock-timing.patch": "bda67f80b250c17401c277314233516ac0c89c47d7f5a41f63e641bbc7ef1be4",
+    "presentation-timing.patch": "b61e2e801dbb3740d20796d2d25b66fc15c61ae788a83a993d9916eb1c200be2",
+    "alertable-zero-readiness.patch": "1de1171bdb5034f9c2a22b44f420c81edef10d9a040db3908676cec517a243bb",
+    "clock-timing-regressions.cpp": "50bc6f1040aea6586ea7ab348f2d01782c5420fa429f3afed924b91106c97515",
+    "alertable-readiness-regressions.cpp": "db15120dd996bb040e7b7d5df23bec1aa70545b073c83fe843578d949d1291cc",
+    "clock-test-support/rex/cvar.h": "c753aceb51d0cc530f98458f36ac617daced68803ba1abb926102afb2c277739",
+    "clock-test-support/rex/logging.h": "69b65585993f1ac35312d0c96d576e3d804bacc032e09a7ef909fb8b023e216c",
+    "idle-toast-repaint.patch": "3e3cd49b561b3a4a3aa864a53255330c54b8b386a9a9336e719111be5a24d190",
+    "NOTICE.md": "612151458044e83b2276658b1e6f6cb736717ba9a903fdaf49a44f95365d4a08"
+  },
+  "application_order": [
+    "chrono-range.patch",
+    "depfile-expectations.patch",
+    "scalar-layout.patch",
+    "gapfill-backward-exit.patch",
+    "gapfill-indirect-terminator.patch",
+    "emitting-owner.patch",
+    "clock-timing.patch",
+    "alertable-zero-readiness.patch",
+    "presentation-timing.patch",
+    "idle-toast-repaint.patch"
+  ]
+}

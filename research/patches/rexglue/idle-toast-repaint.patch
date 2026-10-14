@@ -1,0 +1,197 @@
+--- a/include/rex/ui/imgui_dialog.h
++++ b/include/rex/ui/imgui_dialog.h
+@@ -12,6 +12,7 @@
+ #ifndef REX_UI_IMGUI_DIALOG_H_
+ #define REX_UI_IMGUI_DIALOG_H_
+ 
++#include <functional>
+ #include <memory>
+ #include <vector>
+ 
+@@ -39,11 +40,18 @@
+ 
+   void Draw();
+ 
++  // Ordinary dialogs need continuous repainting for input and animation.
++  virtual bool WantsContinuousRepaint() { return true; }
++
+  protected:
+   ImGuiDialog(ImGuiDrawer* imgui_drawer);
+ 
+   ImGuiDrawer* imgui_drawer() const { return imgui_drawer_; }
+   ImGuiIO& GetIO();
++
++  // May be called from a worker while this dialog is alive. Queued requests
++  // become no-ops if the dialog or its drawer is destroyed before delivery.
++  void RequestRepaint();
+ 
+   // Closes the dialog and returns to any waiters.
+   void Close();
+@@ -54,6 +62,8 @@
+ 
+  private:
+   ImGuiDrawer* imgui_drawer_ = nullptr;
++  std::shared_ptr<void> repaint_lifetime_ = std::make_shared<char>();
++  std::function<void()> repaint_request_;
+   bool has_close_pending_ = false;
+   std::vector<rex::thread::Fence*> waiting_fences_;
+ };
+--- a/include/rex/ui/imgui_drawer.h
++++ b/include/rex/ui/imgui_drawer.h
+@@ -75,6 +75,14 @@
+   // For now, no need for OnDpiChanged because redrawing is done continuously.
+ 
+  private:
++  friend class ImGuiDialog;
++  std::function<void()> CreateRepaintRequest(std::weak_ptr<void> dialog_lifetime);
++
++  struct RepaintState {
++    ImGuiDrawer* drawer;
++  };
++  std::shared_ptr<RepaintState> repaint_state_ = std::make_shared<RepaintState>(RepaintState{this});
++
+   void Initialize();
+ 
+   void SetupFontTexture();
+--- a/include/rex/ui/overlay/achievement_toast.h
++++ b/include/rex/ui/overlay/achievement_toast.h
+@@ -34,6 +34,7 @@
+ 
+   // Thread-safe: safe to call from any thread, including guest threads.
+   void Push(const rex::system::AchievementEvent& event) override;
++  bool WantsContinuousRepaint() override;
+ 
+  protected:
+   void OnDraw(ImGuiIO& io) override;
+--- a/src/ui/imgui_dialog.cpp
++++ b/src/ui/imgui_dialog.cpp
+@@ -19,14 +19,20 @@
+ namespace ui {
+ 
+ ImGuiDialog::ImGuiDialog(ImGuiDrawer* imgui_drawer) : imgui_drawer_(imgui_drawer) {
++  repaint_request_ = imgui_drawer_->CreateRepaintRequest(repaint_lifetime_);
+   imgui_drawer_->AddDialog(this);
+ }
+ 
+ ImGuiDialog::~ImGuiDialog() {
++  repaint_lifetime_.reset();
+   imgui_drawer_->RemoveDialog(this);
+   for (auto fence : waiting_fences_) {
+     fence->Signal();
+   }
++}
++
++void ImGuiDialog::RequestRepaint() {
++  repaint_request_();
+ }
+ 
+ void ImGuiDialog::Then(rex::thread::Fence* fence) {
+--- a/src/ui/imgui_drawer.cpp
++++ b/src/ui/imgui_drawer.cpp
+@@ -19,6 +19,7 @@
+ #include <rex/logging.h>
+ #include <rex/ui/imgui_dialog.h>
+ #include <rex/ui/imgui_drawer.h>
++#include <rex/ui/windowed_app_context.h>
+ #include <rex/ui/ui_event.h>
+ #include <rex/ui/window.h>
+ 
+@@ -98,6 +99,7 @@
+ }
+ 
+ ImGuiDrawer::~ImGuiDrawer() {
++  repaint_state_.reset();
+   SetPresenter(nullptr);
+   SetWindowTextInputActive(false);
+   if (!dialogs_.empty()) {
+@@ -115,6 +117,23 @@
+   }
+ }
+ 
++std::function<void()> ImGuiDrawer::CreateRepaintRequest(std::weak_ptr<void> dialog_lifetime) {
++  auto* context = &window_->app_context();
++  std::weak_ptr<RepaintState> drawer_lifetime = repaint_state_;
++  return [context, drawer_lifetime, dialog_lifetime]() {
++    context->CallInUIThreadDeferred([drawer_lifetime, dialog_lifetime]() {
++      auto state = drawer_lifetime.lock();
++      if (!state || dialog_lifetime.expired()) {
++        return;
++      }
++      auto* presenter = state->drawer->presenter_;
++      if (presenter) {
++        presenter->RequestUIPaintFromUIThread();
++      }
++    });
++  };
++}
++
+ void ImGuiDrawer::AddDialog(ImGuiDialog* dialog) {
+   assert_not_null(dialog);
+   // Check if already added.
+@@ -132,6 +151,9 @@
+     }
+   }
+   dialogs_.push_back(dialog);
++  if (presenter_) {
++    presenter_->RequestUIPaintFromUIThread();
++  }
+ }
+ 
+ void ImGuiDrawer::RemoveDialog(ImGuiDialog* dialog) {
+@@ -436,7 +458,8 @@
+   // it now if needed.
+   DetachIfLastDialogRemoved();
+ 
+-  if (!dialogs_.empty()) {
++  if (std::any_of(dialogs_.begin(), dialogs_.end(),
++                  [](ImGuiDialog* dialog) { return dialog->WantsContinuousRepaint(); })) {
+     // Repaint (and handle input) continuously if still active. In detached mode
+     // there is no presenter; the app drives repaint via its own present loop.
+     if (presenter_) {
+--- a/src/ui/overlay/achievement_toast.cpp
++++ b/src/ui/overlay/achievement_toast.cpp
+@@ -25,8 +25,20 @@
+ AchievementToastDialog::~AchievementToastDialog() {}
+ 
+ void AchievementToastDialog::Push(const rex::system::AchievementEvent& event) {
++  bool was_empty;
++  {
++    std::lock_guard<std::mutex> lock(mutex_);
++    was_empty = queue_.empty();
++    queue_.push_back({event, std::chrono::steady_clock::now()});
++  }
++  if (was_empty) {
++    RequestRepaint();
++  }
++}
++
++bool AchievementToastDialog::WantsContinuousRepaint() {
+   std::lock_guard<std::mutex> lock(mutex_);
+-  queue_.push_back({event, std::chrono::steady_clock::now()});
++  return !queue_.empty();
+ }
+ 
+ void AchievementToastDialog::OnDraw(ImGuiIO& io) {
+--- a/src/ui/rex_app.cpp
++++ b/src/ui/rex_app.cpp
+@@ -439,11 +439,16 @@
+     if (achievement_notification_ && achievement_notification_listener_ == 0 && runtime_ &&
+         runtime_->kernel_state()) {
+       std::weak_ptr<ui::AchievementNotificationDialog> notification = achievement_notification_;
++      auto* context = &app_context();
+       achievement_notification_listener_ = achievements().RegisterNotificationCallback(
+-          [notification](const rex::system::AchievementEvent& event) {
+-            if (auto dialog = notification.lock()) {
+-              dialog->Push(event);
+-            }
++          [notification, context](const rex::system::AchievementEvent& event) {
++            // Acquire dialog ownership only on the UI thread, including during
++            // shutdown, so its last reference cannot remove UI state on a worker.
++            context->CallInUIThreadDeferred([notification, event]() {
++              if (auto dialog = notification.lock()) {
++                dialog->Push(event);
++              }
++            });
+           });
+     }
+ 

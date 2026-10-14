@@ -1,0 +1,548 @@
+--- a/include/rex/chrono/clock.h
++++ b/include/rex/chrono/clock.h
+@@ -55,12 +55,17 @@
+   static double guest_time_scalar();
+   // Sets the guest time scalar, adjusting tick and wall clock speed.
+   // Ex: 1x=normal, 2x=double speed, 1/2x=half speed.
++  // Requires a finite positive scalar whose exact scaled host/guest tick ratio
++  // fits a pair of uint64_t values. Invalid rates are logged and ignored.
++  // Accrues elapsed ticks at the previous rate before changing it; may discard
++  // less than one guest tick of fractional progress at a rate change.
+   static void set_guest_time_scalar(double scalar);
+   // Get the tick ration between host and guest including time scaling if set.
+   static std::pair<uint64_t, uint64_t> guest_tick_ratio();
+   // Guest ticks-per-second.
+   static uint64_t guest_tick_frequency();
+-  // Sets the guest ticks-per-second.
++  // Sets the guest ticks-per-second, preserving elapsed guest time to tick precision.
++  // Zero and ratios not representable as uint64_t pairs are logged and ignored.
+   static void set_guest_tick_frequency(uint64_t frequency);
+   // Time based used for the guest system time.
+   static uint64_t guest_system_time_base();
+--- a/include/rex/chrono/chrono.h
++++ b/include/rex/chrono/chrono.h
+@@ -13,6 +13,8 @@
+ 
+ #include <atomic>
+ #include <chrono>
++#include <cmath>
++#include <limits>
+ #include <cstdint>
+ 
+ #include <rex/chrono/clock.h>
+@@ -36,6 +38,34 @@
+   // adheres to guest scaling (differrent speed, changing clock drift etc):
+   Guest
+ };
++
++inline hundrednanoseconds AddClockOffset(hundrednanoseconds base, hundrednanoseconds offset) {
++  if (offset.count() > 0 && base.count() > INT64_MAX - offset.count()) {
++    return hundrednanoseconds::max();
++  }
++  if (offset.count() < 0 && base.count() < INT64_MIN - offset.count()) {
++    return hundrednanoseconds::min();
++  }
++  return base + offset;
++}
++
++// Clamp the final deadline, not the offset before adding the destination epoch.
++inline hundrednanoseconds ConvertClockOffset(hundrednanoseconds base, hundrednanoseconds offset,
++                                             double scalar, bool guest_to_host) {
++  if (scalar == 1.0) {
++    return AddClockOffset(base, offset);
++  }
++  long double ticks = static_cast<long double>(offset.count());
++  ticks = std::floor(guest_to_host ? ticks / scalar : ticks * scalar);
++  ticks += static_cast<long double>(base.count());
++  if (ticks >= static_cast<long double>(INT64_MAX)) {
++    return hundrednanoseconds::max();
++  }
++  if (ticks <= static_cast<long double>(INT64_MIN)) {
++    return hundrednanoseconds::min();
++  }
++  return hundrednanoseconds(static_cast<int64_t>(ticks));
++}
+ 
+ template <Domain domain_>
+ struct NtSystemClock {
+@@ -143,11 +173,9 @@
+     std::atomic_thread_fence(std::memory_order_acq_rel);
+ 
+     auto delta = (t - x_now);
+-    if (!REXCVAR_GET(clock_no_scaling)) {
+-      delta =
+-          std::chrono::floor<WClock_::duration>(delta * rex::chrono::Clock::guest_time_scalar());
+-    }
+-    return w_now + delta;
++    double scalar = REXCVAR_GET(clock_no_scaling) ? 1.0 : rex::chrono::Clock::guest_time_scalar();
++    return WClock_::time_point(
++        rex::chrono::detail::ConvertClockOffset(w_now.time_since_epoch(), delta, scalar, true));
+   }
+ };
+ 
+@@ -166,11 +194,9 @@
+     std::atomic_thread_fence(std::memory_order_acq_rel);
+ 
+     rex::chrono::hundrednanoseconds delta = (t - w_now);
+-    if (!REXCVAR_GET(clock_no_scaling)) {
+-      delta =
+-          std::chrono::floor<WClock_::duration>(delta / rex::chrono::Clock::guest_time_scalar());
+-    }
+-    return x_now + delta;
++    double scalar = REXCVAR_GET(clock_no_scaling) ? 1.0 : rex::chrono::Clock::guest_time_scalar();
++    return XClock_::time_point(
++        rex::chrono::detail::ConvertClockOffset(x_now.time_since_epoch(), delta, scalar, false));
+   }
+ };
+ 
+--- a/src/core/clock.cpp
++++ b/src/core/clock.cpp
+@@ -10,11 +10,13 @@
+  */
+ 
+ #include <algorithm>
++#include <cmath>
+ #include <limits>
+ #include <mutex>
+ 
+ #include <rex/chrono/clock.h>
+ #include <rex/cvar.h>
++#include <rex/logging.h>
+ #include <rex/math.h>
+ 
+ REXCVAR_DEFINE_BOOL(clock_no_scaling, false, "Clock",
+@@ -32,7 +34,7 @@
+ uint64_t guest_system_time_base_ = Clock::QueryHostSystemTime();
+ // Combined time and frequency ratio between host and guest.
+ // Split in numerator (first) and denominator (second).
+-// Computed by RecomputeGuestTickScalar.
++// Recomputed by the rate setters while holding tick_mutex_.
+ std::pair<uint64_t, uint64_t> guest_tick_ratio_ = std::make_pair(1, 1);
+ 
+ // Native guest ticks.
+@@ -42,66 +44,139 @@
+ // Mutex to ensure last_host_tick_count_ and last_guest_tick_count_ are in sync
+ std::mutex tick_mutex_;
+ 
+-void RecomputeGuestTickScalar() {
+-  // Create a rational number with numerator (first) and denominator (second)
+-  auto frac = std::make_pair(guest_tick_frequency_, Clock::QueryHostTickFrequency());
+-  // Doing it this way ensures we don't mess up our frequency scaling and
+-  // precisely controls the precision the guest_time_scalar_ can have.
+-  if (guest_time_scalar_ > 1.0) {
+-    frac.first *= static_cast<uint64_t>(guest_time_scalar_ * 10.0);
+-    frac.second *= 10;
++namespace {
++uint64_t guest_tick_remainder_ = 0;
++
++uint64_t SaturatingAdd(uint64_t a, uint64_t b) {
++  return a > UINT64_MAX - b ? UINT64_MAX : a + b;
++}
++
++// Computes (value * numerator + remainder) / denominator without requiring
++// compiler-specific wide integers. The slow path is needed only on overflow.
++uint64_t MultiplyDivide(uint64_t value, uint64_t numerator, uint64_t denominator,
++                        uint64_t& remainder) {
++  if (!numerator || value <= (UINT64_MAX - remainder) / numerator) {
++    uint64_t product = value * numerator + remainder;
++    remainder = product % denominator;
++    return product / denominator;
++  }
++  uint64_t quotient = 0;
++  uint64_t fraction = 0;
++  const uint64_t whole = numerator / denominator;
++  const uint64_t part = numerator % denominator;
++  for (int bit = 63; bit >= 0; --bit) {
++    quotient = SaturatingAdd(quotient, quotient);
++    if (fraction >= denominator - fraction) {
++      fraction -= denominator - fraction;
++      quotient = SaturatingAdd(quotient, 1);
++    } else {
++      fraction += fraction;
++    }
++    if ((value >> bit) & 1) {
++      quotient = SaturatingAdd(quotient, whole);
++      if (fraction >= denominator - part) {
++        fraction -= denominator - part;
++        quotient = SaturatingAdd(quotient, 1);
++      } else {
++        fraction += part;
++      }
++    }
++  }
++  if (fraction >= denominator - remainder) {
++    fraction -= denominator - remainder;
++    quotient = SaturatingAdd(quotient, 1);
+   } else {
+-    frac.first *= 10;
+-    frac.second *= static_cast<uint64_t>(10.0 / guest_time_scalar_);
+-  }
+-  // Keep this a rational calculation and reduce the fraction
+-  reduce_fraction(frac);
+-
+-  std::lock_guard<std::mutex> lock(tick_mutex_);
+-  guest_tick_ratio_ = frac;
+-}
+-
+-// Update the guest timer for all threads.
+-// Return a copy of the value so locking is reduced.
+-uint64_t UpdateGuestClock() {
++    fraction += remainder;
++  }
++  remainder = fraction;
++  return quotient;
++}
++
++bool GetGuestTickRatio(uint64_t frequency, double scalar,
++                       std::pair<uint64_t, uint64_t>& ratio) {
++  if (!frequency || !std::isfinite(scalar) || scalar <= 0.0) {
++    return false;
++  }
++  uint64_t host_frequency = Clock::QueryHostTickFrequency();
++  if (!host_frequency) {
++    return false;
++  }
++  reduce_fraction(frequency, host_frequency);
++  int exponent;
++  double fraction = std::frexp(scalar, &exponent);
++  constexpr int precision = std::numeric_limits<double>::digits;
++  static_assert(std::numeric_limits<double>::radix == 2 && precision < 64);
++  uint64_t significand = static_cast<uint64_t>(std::ldexp(fraction, precision));
++  exponent -= precision;
++  reduce_fraction(significand, host_frequency);
++  while (exponent < 0 && !(frequency & 1)) {
++    frequency >>= 1;
++    ++exponent;
++  }
++  while (exponent < 0 && !(significand & 1)) {
++    significand >>= 1;
++    ++exponent;
++  }
++  while (exponent > 0 && !(host_frequency & 1)) {
++    host_frequency >>= 1;
++    --exponent;
++  }
++  if (frequency > UINT64_MAX / significand) {
++    return false;
++  }
++  uint64_t numerator = frequency * significand;
++  if (exponent > 0) {
++    if (exponent >= 64 || numerator > (UINT64_MAX >> exponent)) {
++      return false;
++    }
++    numerator <<= exponent;
++  } else if (exponent < 0) {
++    if (exponent <= -64 || host_frequency > (UINT64_MAX >> -exponent)) {
++      return false;
++    }
++    host_frequency <<= -exponent;
++  }
++  ratio = {numerator, host_frequency};
++  return true;
++}
++
++// tick_mutex_ must be held before sampling, so competing callers cannot apply
++// samples in reverse order. Keep sub-tick fractions across successive reads.
++uint64_t UpdateGuestClockLocked() {
+   uint64_t host_tick_count = Clock::QueryHostTickCount();
+-
+-  if (REXCVAR_GET(clock_no_scaling)) {
+-    // Nothing to update, calculate on the fly
+-    return host_tick_count * guest_tick_ratio_.first / guest_tick_ratio_.second;
+-  }
+-
+-  std::unique_lock<std::mutex> lock(tick_mutex_, std::defer_lock);
+-  if (lock.try_lock()) {
+-    // Translate host tick count to guest tick count.
+-    uint64_t host_tick_delta =
+-        host_tick_count > last_host_tick_count_ ? host_tick_count - last_host_tick_count_ : 0;
++  if (REXCVAR_GET(clock_no_scaling)) {
++    uint64_t remainder = 0;
++    return MultiplyDivide(host_tick_count, guest_tick_ratio_.first,
++                          guest_tick_ratio_.second, remainder);
++  }
++  if (host_tick_count > last_host_tick_count_) {
++    uint64_t delta = host_tick_count - last_host_tick_count_;
+     last_host_tick_count_ = host_tick_count;
+-    uint64_t guest_tick_delta =
+-        host_tick_delta * guest_tick_ratio_.first / guest_tick_ratio_.second;
+-    last_guest_tick_count_ += guest_tick_delta;
+-    return last_guest_tick_count_;
+-  } else {
+-    // Wait until another thread has finished updating the clock.
+-    lock.lock();
+-    return last_guest_tick_count_;
+-  }
+-}
+-
+-// Offset of the current guest system file time relative to the guest base time.
+-inline uint64_t QueryGuestSystemTimeOffset() {
++    last_guest_tick_count_ = SaturatingAdd(
++        last_guest_tick_count_, MultiplyDivide(delta, guest_tick_ratio_.first,
++                                               guest_tick_ratio_.second, guest_tick_remainder_));
++  }
++  return last_guest_tick_count_;
++}
++
++uint64_t QueryGuestSystemTimeOffsetLocked() {
+   if (REXCVAR_GET(clock_no_scaling)) {
+     return Clock::QueryHostSystemTime() - guest_system_time_base_;
+   }
+-
+-  auto guest_tick_count = UpdateGuestClock();
+-
+-  uint64_t numerator = 10000000;  // 100ns/10MHz resolution
+-  uint64_t denominator = guest_tick_frequency_;
+-  reduce_fraction(numerator, denominator);
+-
+-  return guest_tick_count * numerator / denominator;
+-}
++  uint64_t remainder = 0;
++  return MultiplyDivide(UpdateGuestClockLocked(), 10000000, guest_tick_frequency_, remainder);
++}
++
++int64_t ClampSignedDuration(long double value) {
++  if (value >= static_cast<long double>(INT64_MAX)) {
++    return INT64_MAX;
++  }
++  if (value <= static_cast<long double>(INT64_MIN)) {
++    return INT64_MIN;
++  }
++  return static_cast<int64_t>(value);
++}
++}  // namespace
+ 
+ uint64_t Clock::QueryHostTickFrequency() {
+ #if REX_CLOCK_RAW_AVAILABLE
+@@ -121,6 +196,7 @@
+ }
+ 
+ double Clock::guest_time_scalar() {
++  std::lock_guard<std::mutex> lock(tick_mutex_);
+   return guest_time_scalar_;
+ }
+ 
+@@ -128,9 +204,20 @@
+   if (REXCVAR_GET(clock_no_scaling)) {
+     return;
+   }
+-
++  std::lock_guard<std::mutex> lock(tick_mutex_);
++  std::pair<uint64_t, uint64_t> ratio;
++  if (!GetGuestTickRatio(guest_tick_frequency_, scalar, ratio)) {
++    REXLOG_WARN("Ignoring invalid or unrepresentable guest time scalar {}", scalar);
++    return;
++  }
++  if (scalar == guest_time_scalar_) {
++    return;
++  }
++  UpdateGuestClockLocked();
+   guest_time_scalar_ = scalar;
+-  RecomputeGuestTickScalar();
++  guest_tick_ratio_ = ratio;
++  // A rate change may discard less than one guest tick of the old rate.
++  guest_tick_remainder_ = 0;
+ }
+ 
+ std::pair<uint64_t, uint64_t> Clock::guest_tick_ratio() {
+@@ -139,106 +226,123 @@
+ }
+ 
+ uint64_t Clock::guest_tick_frequency() {
++  std::lock_guard<std::mutex> lock(tick_mutex_);
+   return guest_tick_frequency_;
+ }
+ 
+ void Clock::set_guest_tick_frequency(uint64_t frequency) {
++  std::lock_guard<std::mutex> lock(tick_mutex_);
++  std::pair<uint64_t, uint64_t> ratio;
++  if (!GetGuestTickRatio(frequency, guest_time_scalar_, ratio)) {
++    REXLOG_WARN("Ignoring invalid or unrepresentable guest tick frequency {}", frequency);
++    return;
++  }
++  if (frequency == guest_tick_frequency_) {
++    return;
++  }
++  UpdateGuestClockLocked();
++  uint64_t remainder = 0;
++  last_guest_tick_count_ =
++      MultiplyDivide(last_guest_tick_count_, frequency, guest_tick_frequency_, remainder);
+   guest_tick_frequency_ = frequency;
+-  RecomputeGuestTickScalar();
++  guest_tick_ratio_ = ratio;
++  guest_tick_remainder_ = 0;
+ }
+ 
+ uint64_t Clock::guest_system_time_base() {
++  std::lock_guard<std::mutex> lock(tick_mutex_);
+   return guest_system_time_base_;
+ }
+ 
+ void Clock::set_guest_system_time_base(uint64_t time_base) {
++  std::lock_guard<std::mutex> lock(tick_mutex_);
+   guest_system_time_base_ = time_base;
+ }
+ 
+ uint64_t Clock::QueryGuestTickCount() {
+-  auto guest_tick_count = UpdateGuestClock();
+-  return guest_tick_count;
++  std::lock_guard<std::mutex> lock(tick_mutex_);
++  return UpdateGuestClockLocked();
+ }
+ 
+ uint64_t Clock::QueryGuestSystemTime() {
++  std::lock_guard<std::mutex> lock(tick_mutex_);
+   if (REXCVAR_GET(clock_no_scaling)) {
+     return Clock::QueryHostSystemTime();
+   }
+-
+-  auto guest_system_time_offset = QueryGuestSystemTimeOffset();
+-  return guest_system_time_base_ + guest_system_time_offset;
++  return guest_system_time_base_ + QueryGuestSystemTimeOffsetLocked();
+ }
+ 
+ uint32_t Clock::QueryGuestUptimeMillis() {
+-  return static_cast<uint32_t>(std::min<uint64_t>(QueryGuestSystemTimeOffset() / 10000,
++  std::lock_guard<std::mutex> lock(tick_mutex_);
++  return static_cast<uint32_t>(std::min<uint64_t>(QueryGuestSystemTimeOffsetLocked() / 10000,
+                                                   std::numeric_limits<uint32_t>::max()));
+ }
+ 
+ void Clock::SetGuestSystemTime(uint64_t system_time) {
+   if (REXCVAR_GET(clock_no_scaling)) {
+-    // Time is fixed to host time.
+-    return;
+-  }
+-
+-  // Query the filetime offset to calculate a new base time.
+-  auto guest_system_time_offset = QueryGuestSystemTimeOffset();
+-  guest_system_time_base_ = system_time - guest_system_time_offset;
++    return;
++  }
++  std::lock_guard<std::mutex> lock(tick_mutex_);
++  guest_system_time_base_ = system_time - QueryGuestSystemTimeOffsetLocked();
+ }
+ 
+ uint32_t Clock::ScaleGuestDurationMillis(uint32_t guest_ms) {
+-  if (REXCVAR_GET(clock_no_scaling)) {
++  if (REXCVAR_GET(clock_no_scaling) || guest_ms == UINT32_MAX) {
+     return guest_ms;
+   }
+-
+-  constexpr uint64_t max = std::numeric_limits<uint32_t>::max();
+-
+-  if (guest_ms >= max) {
+-    return max;
+-  } else if (!guest_ms) {
+-    return 0;
+-  }
+-  uint64_t scaled_ms =
+-      static_cast<uint64_t>((static_cast<uint64_t>(guest_ms) * guest_time_scalar_));
+-  return static_cast<uint32_t>(std::min(scaled_ms, max));
++  long double scaled = static_cast<long double>(guest_ms) / guest_time_scalar();
++  return scaled >= UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(scaled);
+ }
+ 
+ int64_t Clock::ScaleGuestDurationFileTime(int64_t guest_file_time) {
+-  if (REXCVAR_GET(clock_no_scaling)) {
+-    return static_cast<uint64_t>(guest_file_time);
+-  }
+-
+-  if (!guest_file_time) {
+-    return 0;
+-  } else if (guest_file_time > 0) {
+-    // Absolute time.
+-    uint64_t guest_time = Clock::QueryGuestSystemTime();
+-    int64_t relative_time = guest_file_time - static_cast<int64_t>(guest_time);
+-    int64_t scaled_time = static_cast<int64_t>(relative_time * guest_time_scalar_);
+-    return static_cast<int64_t>(guest_time) + scaled_time;
+-  } else {
+-    // Relative time.
+-    uint64_t scaled_file_time =
+-        static_cast<uint64_t>((static_cast<uint64_t>(guest_file_time) * guest_time_scalar_));
+-    // TODO(benvanik): check for overflow?
+-    return scaled_file_time;
+-  }
++  if (REXCVAR_GET(clock_no_scaling) || !guest_file_time) {
++    return guest_file_time;
++  }
++  double scalar = guest_time_scalar();
++  if (guest_file_time > 0) {
++    // Absolute guest deadline, converted to the host FILETIME epoch.
++    uint64_t guest_now = QueryGuestSystemTime();
++    uint64_t host_now = QueryHostSystemTime();
++    if (scalar == 1.0) {
++      uint64_t deadline = static_cast<uint64_t>(guest_file_time);
++      if (deadline >= guest_now) {
++        return static_cast<int64_t>(std::min(uint64_t(INT64_MAX),
++                                            SaturatingAdd(host_now, deadline - guest_now)));
++      }
++      uint64_t delta = guest_now - deadline;
++      if (host_now >= delta) {
++        return static_cast<int64_t>(std::min(uint64_t(INT64_MAX), host_now - delta));
++      }
++      uint64_t magnitude = delta - host_now;
++      return magnitude >= uint64_t(INT64_MAX) + 1 ? INT64_MIN : -static_cast<int64_t>(magnitude);
++    }
++    long double delta = static_cast<long double>(guest_file_time) - guest_now;
++    return ClampSignedDuration(static_cast<long double>(host_now) + delta / scalar);
++  }
++  if (scalar == 1.0) {
++    return guest_file_time;
++  }
++  return ClampSignedDuration(static_cast<long double>(guest_file_time) / scalar);
+ }
+ 
+ void Clock::ScaleGuestDurationTimeval(int32_t* tv_sec, int32_t* tv_usec) {
+-  if (REXCVAR_GET(clock_no_scaling)) {
+-    return;
+-  }
+-
+-  uint64_t scaled_sec = static_cast<uint64_t>(static_cast<uint64_t>(*tv_sec) * guest_time_scalar_);
+-  uint64_t scaled_usec =
+-      static_cast<uint64_t>(static_cast<uint64_t>(*tv_usec) * guest_time_scalar_);
+-  if (scaled_usec > std::numeric_limits<uint32_t>::max()) {
+-    uint64_t overflow_sec = scaled_usec / 1000000;
+-    scaled_usec -= overflow_sec * 1000000;
+-    scaled_sec += overflow_sec;
+-  }
+-  *tv_sec = int32_t(scaled_sec);
+-  *tv_usec = int32_t(scaled_usec);
++  int64_t microseconds = int64_t(*tv_sec) * 1000000 + *tv_usec;
++  long double scaled = static_cast<long double>(microseconds);
++  if (!REXCVAR_GET(clock_no_scaling)) {
++    scaled /= guest_time_scalar();
++  }
++  constexpr int64_t minimum = int64_t(INT32_MIN) * 1000000;
++  constexpr int64_t maximum = int64_t(INT32_MAX) * 1000000 + 999999;
++  microseconds = static_cast<int64_t>(std::clamp(scaled, static_cast<long double>(minimum),
++                                               static_cast<long double>(maximum)));
++  int64_t seconds = microseconds / 1000000;
++  int64_t remainder = microseconds % 1000000;
++  if (remainder < 0) {
++    --seconds;
++    remainder += 1000000;
++  }
++  *tv_sec = static_cast<int32_t>(seconds);
++  *tv_usec = static_cast<int32_t>(remainder);
+ }
+ 
+ }  // namespace rex::chrono
+--- a/src/core/clock_posix.cpp
++++ b/src/core/clock_posix.cpp
+@@ -26,13 +26,8 @@
+   mach_timebase_info(&info);
+   return (uint64_t)((1000000000ull * (uint64_t)info.denom) / (uint64_t)info.numer);
+ #else
+-  timespec res;
+-  int error = clock_getres(CLOCK_MONOTONIC_RAW, &res);
+-  assert_zero(error);
+-  assert_zero(res.tv_sec);  // Sub second resolution is required.
+-
+-  // Convert nano seconds to hertz. Resolution is 1ns on most systems.
+-  return 1000000000ull / res.tv_nsec;
++  // clock_gettime returns nanoseconds, independently of clock resolution.
++  return 1000000000ull;
+ #endif
+ }
+ 

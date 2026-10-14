@@ -1,0 +1,11 @@
+--- a/src/codegen/phase_gapfill.cpp
++++ b/src/codegen/phase_gapfill.cpp
+@@ -59,7 +59,7 @@
+     } else if (decoded.opcode == Opcode::b && decoded.branch_target.has_value()) {
+       uint32_t target = decoded.branch_target.value();
+       // Don't split on tail recursion (branch to own segment start)
+-      if (target != segmentStart && knownCallables.contains(target)) {
++      if (target != segmentStart && (target < segmentStart || knownCallables.contains(target))) {
+         shouldSplit = true;
+         reason = "tail call";
+       }
