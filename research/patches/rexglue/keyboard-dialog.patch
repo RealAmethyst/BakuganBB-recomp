@@ -1,0 +1,350 @@
+--- a/src/kernel/xam/xam_ui.cpp
++++ b/src/kernel/xam/xam_ui.cpp
+@@ -9,6 +9,11 @@
+  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
+  */
+ 
++#include <atomic>
++#include <limits>
++#include <unordered_map>
++#include <utility>
++
+ #include <rex/logging.h>
+ #include <rex/runtime.h>
+ #include <rex/string.h>
+@@ -26,8 +31,28 @@
+ #include <rex/thread.h>
+ #include <rex/ui/imgui_dialog.h>
+ #include <rex/ui/imgui_drawer.h>
++#include <rex/ui/keyboard_dialog.h>
+ #include <rex/ui/window.h>
+ #include <rex/ui/windowed_app_context.h>
++
++namespace rex::ui {
++namespace {
++KeyboardDialogObserver keyboard_dialog_observer;
++std::atomic<uint64_t> next_keyboard_dialog_id{1};
++
++struct KeyboardNavigationState {
++  size_t dialogs = 0;
++  bool was_enabled = false;
++};
++// Accessed only while drawing or closing dialogs on their UI thread.
++std::unordered_map<ImGuiContext*, KeyboardNavigationState> keyboard_navigation;
++}  // namespace
++
++void SetKeyboardDialogObserver(KeyboardDialogObserver observer) {
++  keyboard_dialog_observer = std::move(observer);
++}
++
++}  // namespace rex::ui
+ 
+ namespace rex {
+ namespace kernel {
+@@ -342,12 +367,11 @@
+ class KeyboardInputDialog : public XamDialog {
+  public:
+   KeyboardInputDialog(rex::ui::ImGuiDrawer* imgui_drawer, std::string title,
+-                      std::string description, std::string default_text, size_t max_length)
++                      std::string description, std::string default_text, size_t guest_capacity)
+       : XamDialog(imgui_drawer),
+         title_(title),
+         description_(description),
+-        default_text_(default_text),
+-        max_length_(max_length),
++        guest_capacity_(guest_capacity),
+         text_buffer_() {
+     if (!title_.size()) {
+       if (!description_.size()) {
+@@ -357,47 +381,83 @@
+         description_ = "";
+       }
+     }
+-    text_ = default_text;
+-    text_buffer_.resize(max_length);
+-    rex::string::copy_truncating(text_buffer_.data(), default_text_, text_buffer_.size());
++    auto initial_text = rex::string::to_utf16(default_text);
++    if (initial_text.size() >= guest_capacity_) {
++      initial_text.resize(guest_capacity_ - 1);
++      // Do not retain half of a supplementary character at the boundary.
++      if (!initial_text.empty() && initial_text.back() >= 0xD800 && initial_text.back() <= 0xDBFF) {
++        initial_text.pop_back();
++      }
++    }
++    text_ = rex::string::to_utf8(initial_text);
++    // Three UTF-8 bytes per UTF-16 unit covers the largest valid encoding.
++    text_buffer_.resize((guest_capacity_ - 1) * 3 + 1);
++    rex::string::copy_truncating(text_buffer_.data(), text_, text_buffer_.size());
++    observed_text_ = text_;
+   }
+ 
+   const std::string& text() const { return text_; }
+   bool cancelled() const { return cancelled_; }
+ 
+   void OnDraw(ImGuiIO& io) override {
+-    bool first_draw = false;
+     if (!has_opened_) {
+       ImGui::OpenPopup(title_.c_str());
+       has_opened_ = true;
+-      first_draw = true;
+     }
+     if (ImGui::BeginPopupModal(title_.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
++      const bool first_draw = !event_id_;
++      if (first_draw) {
++        event_id_ = ui::next_keyboard_dialog_id.fetch_add(1, std::memory_order_relaxed);
++        navigation_context_ = ImGui::GetCurrentContext();
++        auto& navigation = ui::keyboard_navigation[navigation_context_];
++        if (!navigation.dialogs++) {
++          navigation.was_enabled = (io.ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard) != 0;
++        }
++        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
++        Notify(ui::KeyboardDialogEvent::Kind::Opened);
++      }
++      // Handle cancellation before InputText can restore its initial value.
++      if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
++          ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
++        Dismiss(true);
++        ImGui::EndPopup();
++        return;
++      }
+       if (description_.size()) {
+         ImGui::TextWrapped("%s", description_.c_str());
+       }
+       if (first_draw) {
+         ImGui::SetKeyboardFocusHere();
+       }
+-      if (ImGui::InputText("##body", text_buffer_.data(), text_buffer_.size(),
+-                           ImGuiInputTextFlags_EnterReturnsTrue)) {
+-        text_ = std::string(text_buffer_.data(), text_buffer_.size());
+-        cancelled_ = false;
+-        ImGui::CloseCurrentPopup();
+-        Close();
+-      }
+-      if (ImGui::Button("OK")) {
+-        text_ = std::string(text_buffer_.data(), text_buffer_.size());
+-        cancelled_ = false;
+-        ImGui::CloseCurrentPopup();
+-        Close();
++      snapshot_changed_ = false;
++      const bool entered = ImGui::InputText("##body", text_buffer_.data(), text_buffer_.size(),
++                                            ImGuiInputTextFlags_EnterReturnsTrue |
++                                                ImGuiInputTextFlags_CallbackAlways |
++                                                ImGuiInputTextFlags_CallbackResize,
++                                            CaptureTextState, this);
++      int focused_item = ImGui::IsItemFocused() ? 0 : -1;
++      const bool accepted = ImGui::Button("OK");
++      if (ImGui::IsItemFocused()) {
++        focused_item = 1;
+       }
+       ImGui::SameLine();
+-      if (ImGui::Button("Cancel")) {
+-        text_ = "";
+-        cancelled_ = true;
+-        ImGui::CloseCurrentPopup();
+-        Close();
++      const bool cancelled = ImGui::Button("Cancel");
++      if (ImGui::IsItemFocused()) {
++        focused_item = 2;
++      }
++      // Deliver edits before a focus change so observers can compare against
++      // the previous text snapshot before replacing their focused-item state.
++      if (snapshot_changed_) {
++        Notify(ui::KeyboardDialogEvent::Kind::Edited);
++      }
++      if (focused_item != focused_item_) {
++        focused_item_ = focused_item;
++        if (focused_item >= 0) {
++          Notify(ui::KeyboardDialogEvent::Kind::Focused, focused_item);
++        }
++      }
++      if (entered || accepted || cancelled) {
++        Dismiss(cancelled);
+       }
+       ImGui::Spacing();
+       ImGui::EndPopup();
+@@ -406,15 +466,106 @@
+     }
+   }
+ 
++ protected:
++  void OnClose() override {
++    if (event_id_) {
++      Notify(ui::KeyboardDialogEvent::Kind::Closed);
++      auto navigation = ui::keyboard_navigation.find(navigation_context_);
++      if (navigation != ui::keyboard_navigation.end() && !--navigation->second.dialogs) {
++        if (!navigation->second.was_enabled) {
++          GetIO().ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
++        }
++        ui::keyboard_navigation.erase(navigation);
++      }
++      event_id_ = 0;
++    }
++    XamDialog::OnClose();
++  }
++
+  private:
++  static int CaptureTextState(ImGuiInputTextCallbackData* data) {
++    auto* dialog = static_cast<KeyboardInputDialog*>(data->UserData);
++    if (data->EventFlag == ImGuiInputTextFlags_CallbackResize) {
++      dialog->text_buffer_.resize(data->BufSize);
++      data->Buf = dialog->text_buffer_.data();
++      return 0;
++    }
++    std::string text(data->Buf, data->BufTextLen);
++    if (rex::string::to_utf16(text).size() >= dialog->guest_capacity_) {
++      // Reject the entire edit rather than dropping an existing suffix. The
++      // resize flag allows ImGui to present a complete paste for validation.
++      text = dialog->observed_text_;
++      std::memcpy(data->Buf, text.c_str(), text.size() + 1);
++      data->BufTextLen = static_cast<int>(text.size());
++      data->BufDirty = true;
++      data->CursorPos = dialog->has_snapshot_ ? dialog->cursor_ : data->BufTextLen;
++      data->SelectionStart = dialog->has_snapshot_ ? dialog->selection_start_ : data->CursorPos;
++      data->SelectionEnd = dialog->has_snapshot_ ? dialog->selection_end_ : data->CursorPos;
++    }
++    dialog->snapshot_changed_ =
++        dialog->has_snapshot_ &&
++        (dialog->observed_text_ != text || dialog->cursor_ != data->CursorPos ||
++         dialog->selection_start_ != data->SelectionStart ||
++         dialog->selection_end_ != data->SelectionEnd);
++    dialog->observed_text_ = std::move(text);
++    dialog->cursor_ = data->CursorPos;
++    dialog->selection_start_ = data->SelectionStart;
++    dialog->selection_end_ = data->SelectionEnd;
++    dialog->has_snapshot_ = true;
++    return 0;
++  }
++
++  void Notify(ui::KeyboardDialogEvent::Kind kind, int focused_item = -1) {
++    if (!ui::keyboard_dialog_observer) {
++      return;
++    }
++    try {
++      ui::KeyboardDialogEvent event;
++      event.kind = kind;
++      event.id = event_id_;
++      // ImGui window titles hide the identifier suffix beginning with ##.
++      event.title = title_.substr(0, title_.find("##"));
++      event.description = description_;
++      event.text = observed_text_;
++      event.cursor = cursor_;
++      event.selection_start = selection_start_;
++      event.selection_end = selection_end_;
++      event.cancelled = kind == ui::KeyboardDialogEvent::Kind::Closed && cancelled_;
++      event.capacity = guest_capacity_;
++      if (focused_item > 0) {
++        event.label = focused_item == 1 ? "OK" : "Cancel";
++        event.position = static_cast<uint32_t>(focused_item);
++        event.total = 2;
++      }
++      ui::keyboard_dialog_observer(event);
++    } catch (...) {
++      REXKRNL_ERROR("Keyboard dialog observer failed");
++    }
++  }
++
++  void Dismiss(bool cancelled) {
++    cancelled_ = cancelled;
++    text_ = cancelled ? "" : std::string(text_buffer_.data());
++    ImGui::CloseCurrentPopup();
++    Close();
++  }
++
+   bool has_opened_ = false;
+   std::string title_;
+   std::string description_;
+-  std::string default_text_;
+-  size_t max_length_ = 0;
++  size_t guest_capacity_ = 0;
+   std::vector<char> text_buffer_;
+   std::string text_ = "";
+   bool cancelled_ = true;
++  uint64_t event_id_ = 0;
++  ImGuiContext* navigation_context_ = nullptr;
++  int focused_item_ = -1;
++  bool has_snapshot_ = false;
++  bool snapshot_changed_ = false;
++  std::string observed_text_;
++  int cursor_ = -1;
++  int selection_start_ = -1;
++  int selection_end_ = -1;
+ };
+ 
+ // https://www.se7ensins.com/forums/threads/release-how-to-use-xshowkeyboardui-release.906568/
+@@ -425,7 +576,10 @@
+                 uint32_t(user_index), uint32_t(flags), default_text.guest_address(),
+                 title.guest_address(), description.guest_address(), buffer.guest_address(),
+                 uint32_t(buffer_length), overlapped.guest_address());
+-  if (!buffer) {
++  // InputText exposes byte counts as signed int, and the guest count includes
++  // the terminator. Validate before allocating or multiplying either size.
++  constexpr size_t kMaxKeyboardCapacity = (std::numeric_limits<int>::max() - 1) / 3 + 1;
++  if (!buffer || !buffer_length || static_cast<size_t>(buffer_length) > kMaxKeyboardCapacity) {
+     return X_ERROR_INVALID_PARAMETER;
+   }
+ 
+@@ -451,7 +605,7 @@
+       if (dialog->cancelled()) {
+         extended_error = X_ERROR_CANCELLED;
+         length = 0;
+-        return X_ERROR_SUCCESS;
++        return X_ERROR_CANCELLED;
+       } else {
+         // Zero the output buffer.
+         auto text = rex::string::to_utf16(dialog->text());
+@@ -479,10 +633,9 @@
+                      : "";
+ 
+     if (imgui_drawer) {
+-      uint32_t buffer_length_safe = buffer_length + 1;  // +1 for null terminator, just in case
+       result = xeXamDispatchDialogEx<KeyboardInputDialog>(
+           new KeyboardInputDialog(imgui_drawer, title_str, desc_str, def_text_str,
+-                                  buffer_length_safe),
++                                  buffer_length),
+           close, overlapped.guest_address());
+     } else {
+       // Fallback to headless
+--- /dev/null
++++ b/include/rex/ui/keyboard_dialog.h
+@@ -0,0 +1,41 @@
++#pragma once
++
++#include <cstddef>
++#include <cstdint>
++#include <functional>
++#include <string>
++
++namespace rex::ui {
++
++struct KeyboardDialogEvent {
++  enum class Kind { Opened, Focused, Edited, Closed };
++
++  Kind kind;
++  uint64_t id = 0;
++  std::string title;
++  std::string description;
++  std::string text;
++  // Empty for the text field, whose visible caption is empty.
++  std::string label;
++  // UTF-8 byte positions, or -1 before the input widget supplies a snapshot.
++  int cursor = -1;
++  int selection_start = -1;
++  int selection_end = -1;
++  bool cancelled = false;
++  // Guest UTF-16 buffer capacity, including its terminator.
++  size_t capacity = 0;
++  // One-based button position; both zero for the text field or lifecycle events.
++  uint32_t position = 0;
++  uint32_t total = 0;
++};
++
++using KeyboardDialogObserver = std::function<void(const KeyboardDialogEvent&)>;
++
++// Install before runtime threads start; replace or clear only after they stop.
++// Called synchronously from dialog drawing on the UI thread. The event and its
++// strings live only for the callback; copy any data retained beyond the call.
++// Observers must not reenter UI drawing or alter the dialog. Exceptions are
++// caught so optional observation cannot prevent guest dialog completion.
++void SetKeyboardDialogObserver(KeyboardDialogObserver observer);
++
++}  // namespace rex::ui

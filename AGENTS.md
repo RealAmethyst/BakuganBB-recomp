@@ -8,6 +8,14 @@
 - Establish small, verifiable milestones. XenonRecomp and XenosRecomp are candidates, not confirmed solutions for this game. Verify the target executable, runtime requirements and shader behavior before selecting implementations.
 - The multilingual Xbox 360 baseline candidate was accepted on 2026-10-14. Initial executable identity and localization evidence are recorded in `research/executable-baseline.md`; distinguish verified file metadata from unverified runtime behavior.
 
+## Game understanding and future mod support
+
+- Understanding the game is a core project deliverable alongside playability and accessibility. Systematically decompile, trace and document every screen, feature, gameplay mechanic and supporting system as work reaches it. Do not stop at finding enough offsets to make the immediate feature work.
+- Make the recovered knowledge useful to future contributors who want to understand the game or add mod support. Record verified function responsibilities, object relationships, state transitions, data and localization consumers, input handling and interactions with other systems in the established research records. Include executable identity and supporting code locations; distinguish direct evidence, hypotheses and unresolved behavior.
+- Prefer hooks at verified semantic operations and state changes over repeatedly reading memory to infer events. Where no separate event function exists, investigate instrumentation at the actual transition or mutation in the recompiled code. Reading event arguments or copying verified game-owned text remains necessary; bounded reads are not a substitute for understanding ownership and lifecycle. Document any remaining polling, why it is needed and the evidence boundary.
+- Keep recovered game behavior separate from speech policy so the same understanding can support future mods and other integrations. Use meaningful names grounded in evidence, preserve original behavior and avoid speculative interfaces or unrelated rewrites.
+- Maintain this knowledge incrementally with each milestone, including remaining gaps in the authoritative tracker. Keep raw decompilation and proprietary generated source private under the asset rules below; repository documentation should explain verified behavior without embedding those materials. This direction does not authorize publication, commits or pushes.
+
 ## Hard rule: no game assets or acquisition guidance
 
 - Never include game assets in the repository, documentation, examples, test fixtures, CI artifacts or release packages. Never provide sources, links or instructions for obtaining game assets.

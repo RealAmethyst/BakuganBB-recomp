@@ -1,0 +1,1006 @@
+diff --git a/include/rex/input/sdl/sdl_input_driver.h b/include/rex/input/sdl/sdl_input_driver.h
+--- a/include/rex/input/sdl/sdl_input_driver.h
++++ b/include/rex/input/sdl/sdl_input_driver.h
+@@ -60,6 +60,7 @@
+ 
+   struct ControllerState {
+     SDL_Gamepad* sdl;
++    SDL_JoystickID instance_id;
+     X_INPUT_CAPABILITIES caps;
+     X_INPUT_STATE state;
+     bool state_changed;
+@@ -74,6 +75,7 @@
+   void OnLostFocus(rex::ui::UISetupEvent& e) override;
+   void OnGotFocus(rex::ui::UISetupEvent& e) override;
+ 
++  static bool EventWatch(void* userdata, SDL_Event* event);
+   void HandleEvent(const SDL_Event& event);
+   std::unique_lock<std::mutex> DrainAndLock();
+   void ProcessEventLocked(const SDL_Event& event);
+@@ -91,6 +93,7 @@
+   void QueueControllerUpdate();
+ 
+   rex::ui::Window* attached_window_ = nullptr;
++  std::shared_ptr<rex::ui::ModalGamepadInput> modal_input_;
+   bool sdl_events_initialized_;
+   bool SDL_Gamepad_initialized_;
+   std::atomic<int> sdl_events_unflushed_;
+@@ -100,7 +103,13 @@
+   std::vector<ControllerState> controllers_;
+   std::mutex controllers_mutex_;
+   std::mutex event_queue_mutex_;
+-  std::vector<SDL_Event> pending_events_;
++  struct PendingEvent {
++    SDL_Event event;
++    uint64_t sequence;
++  };
++  std::vector<PendingEvent> pending_events_;
++  uint64_t event_sequence_ = 0;            // event_queue_mutex_
++  uint64_t processed_event_sequence_ = 0;  // controllers_mutex_
+   // Never rewound, so a handle held past a disconnect resolves to nothing.
+   uint64_t next_device_id_ = 1;
+ };
+diff --git a/include/rex/ui/imgui_drawer.h b/include/rex/ui/imgui_drawer.h
+--- a/include/rex/ui/imgui_drawer.h
++++ b/include/rex/ui/imgui_drawer.h
+@@ -25,6 +25,8 @@
+ #include <rex/ui/window.h>
+ #include <rex/ui/window_listener.h>
+ 
++#include <rex/ui/modal_gamepad_input.h>
++
+ namespace rex {
+ namespace ui {
+ 
+@@ -40,6 +42,10 @@
+   ~ImGuiDrawer();
+ 
+   ImGuiIO& GetIO();
++
++  std::shared_ptr<ModalGamepadInput::Capture> RequestModalGamepadCapture();
++  // Called only while drawing an actually focused native message popup.
++  void SetModalGamepadTarget(uint64_t id) { next_gamepad_target_ = id; }
+ 
+   // Per-overlay styling, patched by the consumer in OnConfigureStyle.
+   Style& style() { return style_; }
+@@ -99,6 +105,8 @@
+ 
+   std::optional<ImGuiKey> VirtualKeyToImGuiKey(VirtualKey vkey);
+ 
++  uint64_t next_gamepad_target_ = 0;
++
+   Window* window_;
+   size_t z_order_;
+   FontSetupCallback font_setup_;
+diff --git a/include/rex/ui/modal_gamepad_input.h b/include/rex/ui/modal_gamepad_input.h
+new file mode 100644
+--- /dev/null
++++ b/include/rex/ui/modal_gamepad_input.h
+@@ -0,0 +1,271 @@
++#pragma once
++// SPDX-License-Identifier: BSD-3-Clause
++
++#include <algorithm>
++#include <array>
++#include <atomic>
++#include <cstddef>
++#include <cstdint>
++#include <memory>
++#include <mutex>
++#include <optional>
++#include <unordered_map>
++#include <vector>
++
++namespace rex::ui {
++
++// Value-only bridge between driver event threads and the drawing thread.
++// Device keys are the driver's connection instance IDs, not guest user indices.
++class ModalGamepadInput : public std::enable_shared_from_this<ModalGamepadInput> {
++ public:
++  enum Button : uint8_t { None = 0, Left = 1, Right = 2, Confirm = 4 };
++  struct Edge {
++    Button button;
++    bool down;
++  };
++  struct Frame {
++    bool reset;
++    bool active;
++    std::optional<Edge> edge;
++  };
++  struct GuestState {
++    bool suppress;
++    uint16_t buttons;
++  };
++
++  class Capture {
++   public:
++    ~Capture() { Release(); }
++    uint64_t id() const { return id_.load(); }
++    void Release() {
++      if (const uint64_t id = id_.exchange(0))
++        owner_->Release(id);
++    }
++
++   private:
++    friend class ModalGamepadInput;
++    explicit Capture(std::shared_ptr<ModalGamepadInput> owner) : owner_(std::move(owner)) {}
++    std::shared_ptr<ModalGamepadInput> owner_;
++    std::atomic<uint64_t> id_{0};
++  };
++
++  std::shared_ptr<Capture> RequestCapture() {
++    auto capture = std::shared_ptr<Capture>(new Capture(shared_from_this()));
++    std::lock_guard<std::mutex> lock(mutex_);
++    const uint64_t id = next_id_;
++    captures_.push_back(id);
++    ++next_id_;
++    capture->id_ = id;
++    for (auto& [key, device] : devices_)
++      for (size_t bit = 0; bit < 16; ++bit) {
++        if (device.press_sequence[bit]) {
++          device.guest_blocked |= uint16_t(1u << bit);
++          device.block_sequence[bit] = device.press_sequence[bit];
++        }
++      }
++    ResetUiLocked();
++    return capture;
++  }
++
++  // Allocation failure in the driver must not expose a partial input stream.
++  // Recovery requires recreating the channel with the window.
++  void Fail() {
++    std::lock_guard<std::mutex> lock(mutex_);
++    failed_ = true;
++    ResetUiLocked();
++  }
++
++  bool IsCaptured() const {
++    std::lock_guard<std::mutex> lock(mutex_);
++    return !captures_.empty();
++  }
++
++  void SetFocus(bool focused) {
++    std::lock_guard<std::mutex> lock(mutex_);
++    if (focused_ != focused) {
++      focused_ = focused;
++      ResetUiLocked();
++    }
++  }
++
++  // Drawing thread reports the actual focused native message popup, or zero.
++  void SetTarget(uint64_t target) {
++    std::lock_guard<std::mutex> lock(mutex_);
++    if (target_ != target) {
++      target_ = target;
++      ResetUiLocked();
++    }
++  }
++
++  // Publish initial state only after the owning driver has opened the device.
++  // Held buttons on connection must be released before controlling a popup.
++  void Connect(uint64_t id, uint16_t native_down, uint8_t navigation_down, uint64_t sequence) {
++    std::lock_guard<std::mutex> lock(mutex_);
++    auto& device = devices_[id];
++    device.ready = true;
++    device.native_down = native_down;
++    device.navigation_down = navigation_down;
++    device.ui_blocked = navigation_down;
++    for (size_t bit = 0; bit < 16; ++bit) {
++      if (native_down & (1u << bit)) {
++        device.press_sequence[bit] = std::max(device.press_sequence[bit], sequence);
++        if (!captures_.empty()) {
++          device.guest_blocked |= uint16_t(1u << bit);
++          device.block_sequence[bit] = device.press_sequence[bit];
++        }
++      }
++    }
++    UpdateUiLocked();
++  }
++
++  void Disconnect(uint64_t id) {
++    std::lock_guard<std::mutex> lock(mutex_);
++    devices_.erase(id);
++    ResetUiLocked();
++  }
++
++  // The raw watch provides edges before SDL's global queue can discard them.
++  // This deliberately never clears guest_blocked on a raw release.
++  void Publish(uint64_t id, uint16_t native_button, Button navigation, bool down,
++               uint64_t sequence) {
++    std::lock_guard<std::mutex> lock(mutex_);
++    auto& device = devices_[id];
++    if (down) {
++      device.native_down |= native_button;
++      device.navigation_down |= navigation;
++      for (size_t bit = 0; bit < 16; ++bit) {
++        if (native_button & (1u << bit)) {
++          device.press_sequence[bit] = sequence;
++          if (!captures_.empty()) {
++            device.guest_blocked |= uint16_t(1u << bit);
++            device.block_sequence[bit] = sequence;
++          }
++        }
++      }
++    } else {
++      device.native_down &= ~native_button;
++      device.navigation_down &= ~navigation;
++      device.ui_blocked &= ~navigation;
++      for (size_t bit = 0; bit < 16; ++bit)
++        if (native_button & (1u << bit))
++          device.release_sequence[bit] = sequence;
++    }
++    UpdateUiLocked();
++  }
++
++  // Use only fully drained driver state. Clearing quarantine from raw watch
++  // state can expose an older cached press before its release is drained.
++  GuestState FilterGuest(uint64_t id, uint16_t drained_buttons, uint64_t drained_sequence) {
++    std::lock_guard<std::mutex> lock(mutex_);
++    auto found = devices_.find(id);
++    if (failed_ || found == devices_.end() || !found->second.ready)
++      return {true, 0};
++    auto& device = found->second;
++    if (!captures_.empty())
++      return {true, 0};
++    for (size_t bit = 0; bit < 16; ++bit) {
++      if (device.release_sequence[bit] > device.block_sequence[bit] &&
++          device.release_sequence[bit] <= drained_sequence) {
++        device.guest_blocked &= ~uint16_t(1u << bit);
++      }
++    }
++    return {false, uint16_t(drained_buttons & ~device.guest_blocked)};
++  }
++
++  // At most one edge per frame avoids leaving later activation presses in
++  // ImGui's trickled event queue when the first activation closes a popup.
++  Frame TakeFrame() {
++    std::lock_guard<std::mutex> lock(mutex_);
++    Frame frame{reset_, ActiveLocked(), std::nullopt};
++    reset_ = false;
++    if (!frame.reset && frame.active && count_) {
++      frame.edge = edges_[head_];
++      head_ = (head_ + 1) % edges_.size();
++      --count_;
++    }
++    return frame;
++  }
++
++  uint64_t overflow_count() const {
++    std::lock_guard<std::mutex> lock(mutex_);
++    return overflows_;
++  }
++
++ private:
++  struct Device {
++    uint16_t native_down = 0;
++    uint16_t guest_blocked = 0;
++    std::array<uint64_t, 16> press_sequence{};
++    std::array<uint64_t, 16> release_sequence{};
++    std::array<uint64_t, 16> block_sequence{};
++    uint8_t navigation_down = 0;
++    uint8_t ui_blocked = 0;
++    bool ready = false;
++  };
++
++  bool ActiveLocked() const {
++    return !failed_ && focused_ && target_ && !captures_.empty() && target_ == captures_.back();
++  }
++
++  void Release(uint64_t id) {
++    std::lock_guard<std::mutex> lock(mutex_);
++    const auto found = std::find(captures_.begin(), captures_.end(), id);
++    if (found == captures_.end())
++      return;
++    captures_.erase(found);
++    for (auto& [key, device] : devices_)
++      for (size_t bit = 0; bit < 16; ++bit) {
++        if (device.native_down & (1u << bit)) {
++          device.guest_blocked |= uint16_t(1u << bit);
++          device.block_sequence[bit] = device.press_sequence[bit];
++        }
++      }
++    ResetUiLocked();
++  }
++
++  void ResetUiLocked() {
++    for (auto& [key, device] : devices_)
++      device.ui_blocked |= device.navigation_down;
++    head_ = count_ = 0;
++    aggregate_ = 0;
++    reset_ = true;
++  }
++
++  void UpdateUiLocked() {
++    if (!ActiveLocked())
++      return;
++    uint8_t next = 0;
++    for (const auto& [key, device] : devices_)
++      if (device.ready)
++        next |= device.navigation_down & ~device.ui_blocked;
++    for (Button button : {Left, Right, Confirm}) {
++      if ((next & button) == (aggregate_ & button))
++        continue;
++      if (count_ == edges_.size()) {
++        // Do not deliver a partial edge stream. Release and require fresh input.
++        ++overflows_;
++        ResetUiLocked();
++        return;
++      }
++      edges_[(head_ + count_) % edges_.size()] = {button, (next & button) != 0};
++      ++count_;
++    }
++    aggregate_ = next;
++  }
++
++  mutable std::mutex mutex_;
++  std::unordered_map<uint64_t, Device> devices_;
++  std::vector<uint64_t> captures_;
++  uint64_t next_id_ = 1;
++  uint64_t target_ = 0;
++  bool focused_ = false;
++  bool failed_ = false;
++  bool reset_ = true;
++  uint8_t aggregate_ = 0;
++  std::array<Edge, 128> edges_{};
++  size_t head_ = 0;
++  size_t count_ = 0;
++  uint64_t overflows_ = 0;
++};
++
++}  // namespace rex::ui
+diff --git a/include/rex/ui/window.h b/include/rex/ui/window.h
+--- a/include/rex/ui/window.h
++++ b/include/rex/ui/window.h
+@@ -19,6 +19,7 @@
+ 
+ #include <rex/platform.h>
+ #include <rex/ui/menu_item.h>
++#include <rex/ui/modal_gamepad_input.h>
+ #include <rex/ui/presenter.h>
+ #include <rex/ui/surface.h>
+ #include <rex/ui/ui_event.h>
+@@ -161,6 +162,8 @@
+ 
+   WindowedAppContext& app_context() const { return app_context_; }
+ 
++  std::shared_ptr<ModalGamepadInput> modal_gamepad_input() const { return modal_gamepad_input_; }
++
+   Phase phase() const { return phase_; }
+   bool HasActualState() const {
+     // kOpening - for internal use by the implementation.
+@@ -699,6 +702,7 @@
+   // Note: All the iteration logic involving this Z ordering must be the same as
+   // in drawing (in the UI drawers in the Presenter), but in reverse.
+   std::multimap<size_t, WindowInputListener*> input_listeners_;
++  std::shared_ptr<ModalGamepadInput> modal_gamepad_input_ = std::make_shared<ModalGamepadInput>();
+   // Linked list-based stacks of the contexts of the listener iterations
+   // currently being done, usually allocated on the stack.
+   ListenerIterationContext* innermost_listener_iteration_context_ = nullptr;
+diff --git a/src/input/sdl/sdl_input_driver.cpp b/src/input/sdl/sdl_input_driver.cpp
+--- a/src/input/sdl/sdl_input_driver.cpp
++++ b/src/input/sdl/sdl_input_driver.cpp
+@@ -30,6 +30,65 @@
+ // SDL clamps to SDL_MAX_RUMBLE_DURATION_MS, which is not a public constant.
+ constexpr uint32_t kRumbleDurationMs = 0xFFFF;
+ 
++class JoystickLock {
++ public:
++  JoystickLock() { SDL_LockJoysticks(); }
++  ~JoystickLock() { SDL_UnlockJoysticks(); }
++};
++
++uint16_t XButtonFromSDL(uint8_t button) {
++  // Define a lookup table to map between SDL and XInput button codes.
++  // These need to be in the order of the SDL_GamepadButton enum.
++  static constexpr std::array<std::underlying_type<X_INPUT_GAMEPAD_BUTTON>::type, 21>
++      xbutton_lookup = {
++          // Standard buttons:
++          X_INPUT_GAMEPAD_A,
++          X_INPUT_GAMEPAD_B,
++          X_INPUT_GAMEPAD_X,
++          X_INPUT_GAMEPAD_Y,
++          X_INPUT_GAMEPAD_BACK,
++          X_INPUT_GAMEPAD_GUIDE,
++          X_INPUT_GAMEPAD_START,
++          X_INPUT_GAMEPAD_LEFT_THUMB,
++          X_INPUT_GAMEPAD_RIGHT_THUMB,
++          X_INPUT_GAMEPAD_LEFT_SHOULDER,
++          X_INPUT_GAMEPAD_RIGHT_SHOULDER,
++          X_INPUT_GAMEPAD_DPAD_UP,
++          X_INPUT_GAMEPAD_DPAD_DOWN,
++          X_INPUT_GAMEPAD_DPAD_LEFT,
++          X_INPUT_GAMEPAD_DPAD_RIGHT,
++          // There are additional buttons only available on some controllers.
++          // For now just assign sensible defaults
++          // Misc:
++          X_INPUT_GAMEPAD_GUIDE,
++          // Xbox Elite paddles:
++          X_INPUT_GAMEPAD_Y,
++          X_INPUT_GAMEPAD_B,
++          X_INPUT_GAMEPAD_X,
++          X_INPUT_GAMEPAD_A,
++          // PS touchpad button
++          X_INPUT_GAMEPAD_GUIDE,
++  };
++  static_assert(SDL_GAMEPAD_BUTTON_SOUTH == 0);
++  static_assert(SDL_GAMEPAD_BUTTON_DPAD_RIGHT == 14);
++
++  return button < xbutton_lookup.size() ? xbutton_lookup[button] : 0;
++}
++
++rex::ui::ModalGamepadInput::Button NavigationButtonFromSDL(uint8_t button) {
++  using Input = rex::ui::ModalGamepadInput;
++  switch (button) {
++    case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
++      return Input::Left;
++    case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
++      return Input::Right;
++    case SDL_GAMEPAD_BUTTON_SOUTH:
++      return Input::Confirm;
++    default:
++      return Input::None;
++  }
++}
++
+ }  // namespace
+ 
+ SDLInputDriver::SDLInputDriver(rex::ui::Window* window, size_t window_z_order)
+@@ -54,6 +113,7 @@
+ void SDLInputDriver::OnWindowAvailable(rex::ui::Window* window) {
+   if (window && !attached_window_) {
+     attached_window_ = window;
++    modal_input_ = window->modal_gamepad_input();
+     window->AddListener(this);
+     window->app_context().CallInUIThreadSynchronous([this]() {
+       // Initialize SDL events subsystem
+@@ -63,30 +123,14 @@
+       }
+       sdl_events_initialized_ = true;
+       pending_events_.reserve(64);
++      modal_input_->SetFocus(attached_window_->HasFocus());
+ 
+       // With an event watch we will always get notified, even if the event queue
+       // is full, which can happen if another subsystem does not clear its events.
+-      SDL_AddEventWatch(
+-          [](void* userdata, SDL_Event* event) -> bool {
+-            if (!userdata || !event) {
+-              assert_always();
+-              return false;
+-            }
+-
+-            const auto type = event->type;
+-            if (type < SDL_EVENT_JOYSTICK_AXIS_MOTION || type >= SDL_EVENT_FINGER_DOWN) {
+-              return false;
+-            }
+-
+-            // If another part of rex uses another SDL subsystem that generates
+-            // events, this may seem like a bad idea. They will however not
+-            // subscribe to controller events so we get away with that.
+-            const auto driver = static_cast<SDLInputDriver*>(userdata);
+-            driver->HandleEvent(*event);
+-
+-            return false;
+-          },
+-          this);
++      if (!SDL_AddEventWatch(EventWatch, this)) {
++        REXLOG_ERROR("SDL: Failed to install controller event watch");
++        return;
++      }
+ 
+       // Initialize game controller subsystem
+       if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) {
+@@ -120,14 +164,25 @@
+ void SDLInputDriver::OnClosing(rex::ui::UIEvent&) {
+   if (attached_window_) {
+     attached_window_->RemoveListener(this);
++    if (sdl_events_initialized_) {
++      // Pinned SDL serializes removal with watcher dispatch.
++      SDL_RemoveEventWatch(EventWatch, this);
++    }
++    modal_input_->SetFocus(false);
+     if (sdl_pumpevents_queued_) {
+       attached_window_->app_context().CallInUIThreadSynchronous(
+           [this]() { attached_window_->app_context().ExecutePendingFunctionsFromUIThread(); });
+     }
+-    for (auto& controller : controllers_) {
+-      SDL_CloseGamepad(controller.sdl);
+-    }
+-    controllers_.clear();
++    {
++      // Deferred UI drains have completed. Serialize final device removal with
++      // any driver call already in progress, using the normal driver lock.
++      std::lock_guard<std::mutex> guard(controllers_mutex_);
++      for (auto& controller : controllers_) {
++        modal_input_->Disconnect(controller.instance_id);
++        SDL_CloseGamepad(controller.sdl);
++      }
++      controllers_.clear();
++    }
+     if (SDL_Gamepad_initialized_) {
+       SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
+       SDL_Gamepad_initialized_ = false;
+@@ -137,12 +192,17 @@
+       sdl_events_initialized_ = false;
+     }
+     attached_window_ = nullptr;
+-  }
+-}
+-
+-void SDLInputDriver::OnLostFocus(rex::ui::UISetupEvent&) {}
+-
+-void SDLInputDriver::OnGotFocus(rex::ui::UISetupEvent&) {}
++    modal_input_.reset();
++  }
++}
++
++void SDLInputDriver::OnLostFocus(rex::ui::UISetupEvent&) {
++  modal_input_->SetFocus(false);
++}
++
++void SDLInputDriver::OnGotFocus(rex::ui::UISetupEvent&) {
++  modal_input_->SetFocus(true);
++}
+ 
+ void SDLInputDriver::EnumerateDevices(std::vector<DeviceInfo>& out) {
+   // Polling can start before the window exists and the subsystems are up.
+@@ -207,6 +267,10 @@
+     return X_ERROR_DEVICE_NOT_CONNECTED;
+   }
+ 
++  const auto modal = modal_input_->FilterGuest(
++      controller->instance_id, controller->state.gamepad.buttons, processed_event_sequence_);
++  is_active = is_active && !modal.suppress;
++
+   // Make sure packet_number is only incremented by 1, even if there have been
+   // multiple updates between GetState calls. Also track `is_active` to
+   // increment the packet number if it changed.
+@@ -216,6 +280,7 @@
+     controller->state_changed = false;
+   }
+   std::memcpy(out_state, &controller->state, sizeof(*out_state));
++  out_state->gamepad.buttons = modal.buttons;
+   if (!is_active) {
+     // Simulate an "untouched" controller. When we become active again the
+     // pressed buttons aren't lost and will be visible again.
+@@ -311,13 +376,17 @@
+     return X_ERROR_DEVICE_NOT_CONNECTED;
+   }
+ 
++  const auto modal = modal_input_->FilterGuest(
++      controller->instance_id, controller->state.gamepad.buttons, processed_event_sequence_);
++  is_active = is_active && !modal.suppress;
++
+   // If input is not active (e.g. due to a dialog overlay), force buttons to
+   // "unpressed". The algorithm will automatically send UP events when
+   // 'is_active()' goes low and DOWN events when it goes high again.
+   const uint64_t curr_butts =
+-      is_active ? (static_cast<uint64_t>(static_cast<uint16_t>(controller->state.gamepad.buttons)) |
+-                   AnalogToKeyfield(controller->state.gamepad))
+-                : uint64_t(0);
++      is_active
++          ? (static_cast<uint64_t>(modal.buttons) | AnalogToKeyfield(controller->state.gamepad))
++          : uint64_t(0);
+   KeystrokeState& last = controller->keystroke;
+ 
+   // Handle repeating
+@@ -387,6 +456,20 @@
+   return X_ERROR_EMPTY;
+ }
+ 
++bool SDLInputDriver::EventWatch(void* userdata, SDL_Event* event) {
++  if (userdata && event && event->type >= SDL_EVENT_JOYSTICK_AXIS_MOTION &&
++      event->type < SDL_EVENT_FINGER_DOWN) {
++    auto* driver = static_cast<SDLInputDriver*>(userdata);
++    try {
++      driver->HandleEvent(*event);
++    } catch (...) {
++      // Never unwind through SDL's C callback or expose a partial input stream.
++      driver->modal_input_->Fail();
++    }
++  }
++  return false;
++}
++
+ void SDLInputDriver::HandleEvent(const SDL_Event& event) {
+   // This callback will likely run on the thread that posts the event, which
+   // may be a dedicated thread SDL has created for the joystick subsystem.
+@@ -400,22 +483,39 @@
+     sdl_events_unflushed_ = 0;
+   }
+ 
+-  // Buffer only - no controllers_mutex_ acquisition here.
+-  // This breaks the lock ordering inversion between controllers_mutex_ and
+-  // SDL's internal joystick lock that caused deadlocks.
+-  std::lock_guard<std::mutex> guard(event_queue_mutex_);
+-  pending_events_.push_back(event);
+-}
+-
+-std::unique_lock<std::mutex> SDLInputDriver::DrainAndLock() {
+-  std::vector<SDL_Event> events;
++  // Keep sequence assignment, raw publication and driver buffering ordered.
++  // The watch never takes controllers_mutex_. Driver batches take that lock
++  // before swapping this queue, preventing concurrent drains from reordering.
+   {
+     std::lock_guard<std::mutex> guard(event_queue_mutex_);
++    const uint64_t sequence = ++event_sequence_;
++    if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || event.type == SDL_EVENT_GAMEPAD_BUTTON_UP) {
++      const uint16_t button = XButtonFromSDL(event.gbutton.button);
++      if (button) {
++        modal_input_->Publish(event.gbutton.which, button,
++                              NavigationButtonFromSDL(event.gbutton.button), event.gbutton.down,
++                              sequence);
++      }
++    } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED) {
++      modal_input_->Disconnect(event.gdevice.which);
++    }
++    pending_events_.push_back({event, sequence});
++  }
++  if (modal_input_->IsCaptured()) {
++    QueueControllerUpdate();
++  }
++}
++
++std::unique_lock<std::mutex> SDLInputDriver::DrainAndLock() {
++  std::unique_lock<std::mutex> guard(controllers_mutex_);
++  std::vector<PendingEvent> events;
++  {
++    std::lock_guard<std::mutex> queue_guard(event_queue_mutex_);
+     events.swap(pending_events_);
+   }
+-  std::unique_lock<std::mutex> guard(controllers_mutex_);
+-  for (const auto& event : events) {
+-    ProcessEventLocked(event);
++  for (const auto& pending : events) {
++    ProcessEventLocked(pending.event);
++    processed_event_sequence_ = pending.sequence;
+   }
+   return guard;
+ }
+@@ -462,6 +562,29 @@
+   // order and leaves non-XInput pads unnumbered.
+   ControllerState state = {};
+   state.sdl = controller;
++  state.instance_id = event.gdevice.which;
++  {
++    // SDL guarantees gamepad state and event delivery remain stable while held.
++    JoystickLock joystick_lock;
++    uint64_t connection_sequence;
++    {
++      std::lock_guard<std::mutex> queue_guard(event_queue_mutex_);
++      connection_sequence = ++event_sequence_;
++    }
++    uint16_t initial_buttons = 0;
++    uint8_t initial_navigation = 0;
++    for (uint8_t button = 0; button < SDL_GAMEPAD_BUTTON_COUNT; ++button) {
++      if (SDL_GetGamepadButton(controller, static_cast<SDL_GamepadButton>(button))) {
++        initial_buttons |= XButtonFromSDL(button);
++        initial_navigation |= NavigationButtonFromSDL(button);
++      }
++    }
++    if (!REXCVAR_GET(guide_button))
++      initial_buttons &= ~X_INPUT_GAMEPAD_GUIDE;
++    state.state.gamepad.buttons = initial_buttons;
++    modal_input_->Connect(state.instance_id, initial_buttons, initial_navigation,
++                          connection_sequence);
++  }
+   state.id = AllocateDeviceId();
+   state.state_changed = true;  // XInput starts with packet_number = 1
+   UpdateXCapabilities(state);
+@@ -525,41 +648,6 @@
+ }
+ 
+ void SDLInputDriver::OnControllerDeviceButtonChangedLocked(const SDL_Event& event) {
+-  // Define a lookup table to map between SDL and XInput button codes.
+-  // These need to be in the order of the SDL_GamepadButton enum.
+-  static constexpr std::array<std::underlying_type<X_INPUT_GAMEPAD_BUTTON>::type, 21>
+-      xbutton_lookup = {
+-          // Standard buttons:
+-          X_INPUT_GAMEPAD_A,
+-          X_INPUT_GAMEPAD_B,
+-          X_INPUT_GAMEPAD_X,
+-          X_INPUT_GAMEPAD_Y,
+-          X_INPUT_GAMEPAD_BACK,
+-          X_INPUT_GAMEPAD_GUIDE,
+-          X_INPUT_GAMEPAD_START,
+-          X_INPUT_GAMEPAD_LEFT_THUMB,
+-          X_INPUT_GAMEPAD_RIGHT_THUMB,
+-          X_INPUT_GAMEPAD_LEFT_SHOULDER,
+-          X_INPUT_GAMEPAD_RIGHT_SHOULDER,
+-          X_INPUT_GAMEPAD_DPAD_UP,
+-          X_INPUT_GAMEPAD_DPAD_DOWN,
+-          X_INPUT_GAMEPAD_DPAD_LEFT,
+-          X_INPUT_GAMEPAD_DPAD_RIGHT,
+-          // There are additional buttons only available on some controllers.
+-          // For now just assign sensible defaults
+-          // Misc:
+-          X_INPUT_GAMEPAD_GUIDE,
+-          // Xbox Elite paddles:
+-          X_INPUT_GAMEPAD_Y,
+-          X_INPUT_GAMEPAD_B,
+-          X_INPUT_GAMEPAD_X,
+-          X_INPUT_GAMEPAD_A,
+-          // PS touchpad button
+-          X_INPUT_GAMEPAD_GUIDE,
+-      };
+-  static_assert(SDL_GAMEPAD_BUTTON_SOUTH == 0);
+-  static_assert(SDL_GAMEPAD_BUTTON_DPAD_RIGHT == 14);
+-
+   auto idx = GetControllerIndexFromInstanceID(event.gdevice.which);
+   if (!idx) {
+     // The pad can be removed between the event being posted and drained.
+@@ -569,12 +657,12 @@
+ 
+   uint16_t xbuttons = controller.state.gamepad.buttons;
+   // Lookup the XInput button code.
+-  if (event.gbutton.button >= xbutton_lookup.size()) {
++  const auto xbutton = XButtonFromSDL(event.gbutton.button);
++  if (!xbutton) {
+     // A newer SDL Version may have added new buttons.
+     REXLOG_INFO("SDL HID: Unknown button was pressed: {}.", event.gbutton.button);
+     return;
+   }
+-  auto xbutton = xbutton_lookup.at(event.gbutton.button);
+   // Pressed or released?
+   if (event.gbutton.down) {
+     if (xbutton == X_INPUT_GAMEPAD_GUIDE && !REXCVAR_GET(guide_button)) {
+@@ -591,12 +679,7 @@
+ std::optional<size_t> SDLInputDriver::GetControllerIndexFromInstanceID(SDL_JoystickID instance_id) {
+   // Loop through our controllers and try to match the given ID.
+   for (size_t i = 0; i < controllers_.size(); i++) {
+-    auto controller = controllers_.at(i).sdl;
+-    auto joystick = SDL_GetGamepadJoystick(controller);
+-    assert(joystick);
+-    auto joy_instance_id = SDL_GetJoystickID(joystick);
+-    assert(joy_instance_id >= 0);
+-    if (joy_instance_id == instance_id) {
++    if (controllers_[i].instance_id == instance_id) {
+       return i;
+     }
+   }
+@@ -669,14 +752,18 @@
+ }
+ 
+ void SDLInputDriver::QueueControllerUpdate() {
+-  // Pump SDL events to ensure controller state is up to date.
+   bool is_queued = false;
+-  sdl_pumpevents_queued_.compare_exchange_strong(is_queued, true);
+-  if (!is_queued) {
+-    attached_window_->app_context().CallInUIThread([this]() {
+-      SDL_PumpEvents();
++  if (sdl_pumpevents_queued_.compare_exchange_strong(is_queued, true)) {
++    // Always defer: this may be called from SDL's event watch while pumping.
++    if (!attached_window_->app_context().CallInUIThreadDeferred([this]() {
++          SDL_PumpEvents();
++          sdl_pumpevents_queued_ = false;
++          // Driver-owned normalization continues while a guest waits for a modal.
++          // Never call ImGui or UI listeners while controllers_mutex_ is held.
++          auto guard = DrainAndLock();
++        })) {
+       sdl_pumpevents_queued_ = false;
+-    });
++    }
+   }
+ }
+ 
+diff --git a/src/kernel/xam/xam_ui.cpp b/src/kernel/xam/xam_ui.cpp
+--- a/src/kernel/xam/xam_ui.cpp
++++ b/src/kernel/xam/xam_ui.cpp
+@@ -33,6 +33,7 @@
+ #include <rex/ui/imgui_drawer.h>
+ #include <rex/ui/keyboard_dialog.h>
+ #include <rex/ui/message_box_dialog.h>
++#include <rex/ui/modal_gamepad_input.h>
+ #include <rex/ui/window.h>
+ #include <rex/ui/windowed_app_context.h>
+ 
+@@ -107,27 +108,39 @@
+ };
+ 
+ template <typename T>
+-X_RESULT xeXamDispatchDialog(T* dialog, std::function<X_RESULT(T*)> close_callback,
+-                             uint32_t overlapped) {
++X_RESULT xeXamDispatchDialog(std::function<T*()> create,
++                             std::shared_ptr<ui::ModalGamepadInput::Capture> capture,
++                             std::function<X_RESULT(T*)> close_callback, uint32_t overlapped) {
+   auto pre = []() {
+     // Broadcast XN_SYS_UI = true
+     REX_KERNEL_STATE()->BroadcastNotification(0x9, true);
+   };
+-  auto run = [dialog, close_callback]() -> X_RESULT {
+-    X_RESULT result;
+-    dialog->set_close_callback(
+-        [&dialog, &result, &close_callback]() { result = close_callback(dialog); });
++  auto run = [create, capture, close_callback]() -> X_RESULT {
++    X_RESULT result = X_ERROR_CANCELLED;
++    bool created = false;
+     rex::thread::Fence fence;
+     rex::ui::WindowedAppContext* app_context = REX_KERNEL_STATE()->emulator()->app_context();
+-    if (app_context &&
+-        app_context->CallInUIThreadSynchronous([&dialog, &fence]() { dialog->Then(&fence); })) {
++    if (app_context && app_context->CallInUIThreadSynchronous([&]() {
++          try {
++            // Creation attaches the dialog to the drawer. Complete setup before
++            // returning to the UI loop, which is the first opportunity to draw.
++            std::unique_ptr<T> dialog(create());
++            auto* pointer = dialog.get();
++            dialog->set_close_callback(
++                [pointer, &result, close_callback]() { result = close_callback(pointer); });
++            dialog->Then(&fence);
++            dialog.release();
++            created = true;
++          } catch (...) {
++            REXKRNL_ERROR("Message box dialog creation failed");
++          }
++        }) &&
++        created) {
+       ++xam_dialogs_shown_;
+       fence.Wait();
+       --xam_dialogs_shown_;
+-    } else {
+-      delete dialog;
+-    }
+-    // dialog should be deleted at this point!
++    }
++    capture->Release();
+     return result;
+   };
+   auto post = []() {
+@@ -244,13 +257,15 @@
+ class MessageBoxDialog : public XamDialog {
+  public:
+   MessageBoxDialog(rex::ui::ImGuiDrawer* imgui_drawer, std::string title, std::string description,
+-                   std::vector<std::string> buttons, uint32_t default_button)
++                   std::vector<std::string> buttons, uint32_t default_button,
++                   std::shared_ptr<ui::ModalGamepadInput::Capture> capture = {})
+       : XamDialog(imgui_drawer),
+         title_(title),
+         description_(description),
+         buttons_(std::move(buttons)),
+         default_button_(default_button),
+-        chosen_button_(default_button) {
++        chosen_button_(default_button),
++        capture_(std::move(capture)) {
+     if (!title_.size()) {
+       title_ = "Message Box";
+     }
+@@ -266,6 +281,9 @@
+       first_draw = true;
+     }
+     if (ImGui::BeginPopupModal(title_.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
++      if (capture_ && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
++        imgui_drawer()->SetModalGamepadTarget(capture_->id());
++      }
+       if (!event_id_) {
+         event_id_ = ui::next_message_box_dialog_id.fetch_add(1, std::memory_order_relaxed);
+         Notify(ui::MessageBoxDialogEvent::Kind::Opened);
+@@ -273,11 +291,11 @@
+       if (description_.size()) {
+         ImGui::Text("%s", description_.c_str());
+       }
+-      if (first_draw) {
+-        ImGui::SetKeyboardFocusHere();
+-      }
+       int focused_button = -1;
+       for (size_t i = 0; i < buttons_.size(); ++i) {
++        if (first_draw && i == default_button_) {
++          ImGui::SetKeyboardFocusHere();
++        }
+         if (ImGui::Button(buttons_[i].c_str())) {
+           chosen_button_ = static_cast<uint32_t>(i);
+           ImGui::CloseCurrentPopup();
+@@ -308,6 +326,8 @@
+       Notify(ui::MessageBoxDialogEvent::Kind::Closed);
+       event_id_ = 0;
+     }
++    if (capture_)
++      capture_->Release();
+     XamDialog::OnClose();
+   }
+ 
+@@ -343,6 +363,7 @@
+   uint32_t chosen_button_ = 0;
+   uint64_t event_id_ = 0;
+   int focused_button_ = -1;
++  std::shared_ptr<ui::ModalGamepadInput::Capture> capture_;
+ };
+ 
+ // https://www.se7ensins.com/forums/threads/working-xshowmessageboxui.844116/
+@@ -405,9 +426,12 @@
+     const Runtime* emulator = REX_KERNEL_STATE()->emulator();
+     ui::ImGuiDrawer* imgui_drawer = emulator->imgui_drawer();
+     if (imgui_drawer) {
+-      result = xeXamDispatchDialog<MessageBoxDialog>(
+-          new MessageBoxDialog(imgui_drawer, title, text_str, buttons, active_button), close,
+-          overlapped.guest_address());
++      auto capture = imgui_drawer->RequestModalGamepadCapture();
++      auto create = [imgui_drawer, title, text_str, buttons, active_button, capture]() {
++        return new MessageBoxDialog(imgui_drawer, title, text_str, buttons, active_button, capture);
++      };
++      result =
++          xeXamDispatchDialog<MessageBoxDialog>(create, capture, close, overlapped.guest_address());
+     } else {
+       // Fallback to headless if no drawer available
+       auto run = [result_ptr, active_button]() -> X_RESULT {
+@@ -732,12 +756,16 @@
+   const Runtime* emulator = REX_KERNEL_STATE()->emulator();
+   ui::ImGuiDrawer* imgui_drawer = emulator->imgui_drawer();
+   if (imgui_drawer) {
++    auto capture = imgui_drawer->RequestModalGamepadCapture();
++    auto create = [imgui_drawer, capture]() {
++      return new MessageBoxDialog(
++          imgui_drawer, "Disc Read Error",
++          "There's been an issue reading content from the game disc.\nThis is "
++          "likely caused by bad or unimplemented file IO calls.",
++          {"OK"}, 0, capture);
++    };
+     xeXamDispatchDialog<MessageBoxDialog>(
+-        new MessageBoxDialog(imgui_drawer, "Disc Read Error",
+-                             "There's been an issue reading content from the game disc.\nThis is "
+-                             "likely caused by bad or unimplemented file IO calls.",
+-                             {"OK"}, 0),
+-        [](MessageBoxDialog*) -> X_RESULT { return X_ERROR_SUCCESS; }, 0);
++        create, capture, [](MessageBoxDialog*) -> X_RESULT { return X_ERROR_SUCCESS; }, 0);
+   } else {
+     // No UI available - log prominently and pause to let user see the error
+     REXKRNL_ERROR("===========================================");
+diff --git a/src/ui/imgui_drawer.cpp b/src/ui/imgui_drawer.cpp
+--- a/src/ui/imgui_drawer.cpp
++++ b/src/ui/imgui_drawer.cpp
+@@ -150,6 +150,9 @@
+       presenter_->AddUIDrawerFromUIThread(this, z_order_);
+     }
+   }
++  // A newly attached child may take focus on its first draw. Discard input
++  // queued for the previous popup before ImGui starts that frame.
++  window_->modal_gamepad_input()->SetTarget(0);
+   dialogs_.push_back(dialog);
+   if (presenter_) {
+     presenter_->RequestUIPaintFromUIThread();
+@@ -398,6 +401,10 @@
+   }
+ }
+ 
++std::shared_ptr<ModalGamepadInput::Capture> ImGuiDrawer::RequestModalGamepadCapture() {
++  return window_->modal_gamepad_input()->RequestCapture();
++}
++
+ void ImGuiDrawer::Draw(UIDrawContext& ui_draw_context) {
+   // Drawing is initiated by the presenter (SDK mode), or by the app in detached
+   // mode (config.graphics == nullptr), where there is no presenter.
+@@ -434,6 +441,26 @@
+   io.DisplaySize.x = window_->GetActualPhysicalWidth() * physical_to_logical;
+   io.DisplaySize.y = window_->GetActualPhysicalHeight() * physical_to_logical;
+ 
++  auto gamepad = window_->modal_gamepad_input();
++  const auto input = gamepad->TakeFrame();
++  const auto saved_gamepad_config = io.ConfigFlags & ImGuiConfigFlags_NavEnableGamepad;
++  const auto saved_gamepad_backend = io.BackendFlags & ImGuiBackendFlags_HasGamepad;
++  if (input.reset) {
++    io.AddKeyEvent(ImGuiKey_GamepadDpadLeft, false);
++    io.AddKeyEvent(ImGuiKey_GamepadDpadRight, false);
++    io.AddKeyEvent(ImGuiKey_GamepadFaceDown, false);
++  } else if (input.edge) {
++    const ImGuiKey key = input.edge->button == ModalGamepadInput::Left ? ImGuiKey_GamepadDpadLeft
++                         : input.edge->button == ModalGamepadInput::Right
++                             ? ImGuiKey_GamepadDpadRight
++                             : ImGuiKey_GamepadFaceDown;
++    io.AddKeyEvent(key, input.edge->down);
++  }
++  if (input.active) {
++    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
++    io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
++  }
++  next_gamepad_target_ = 0;
+   ImGui::NewFrame();
+ 
+   assert_true(!IsDrawingDialogs());
+@@ -444,6 +471,9 @@
+   dialog_loop_next_index_ = SIZE_MAX;
+ 
+   ImGui::Render();
++  gamepad->SetTarget(next_gamepad_target_);
++  io.ConfigFlags = (io.ConfigFlags & ~ImGuiConfigFlags_NavEnableGamepad) | saved_gamepad_config;
++  io.BackendFlags = (io.BackendFlags & ~ImGuiBackendFlags_HasGamepad) | saved_gamepad_backend;
+   ImDrawData* draw_data = ImGui::GetDrawData();
+   if (draw_data) {
+     RenderDrawLists(draw_data, ui_draw_context);

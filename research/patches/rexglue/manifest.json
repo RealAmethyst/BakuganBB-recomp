@@ -23,7 +23,15 @@
     "clock-test-support/rex/cvar.h": "c753aceb51d0cc530f98458f36ac617daced68803ba1abb926102afb2c277739",
     "clock-test-support/rex/logging.h": "69b65585993f1ac35312d0c96d576e3d804bacc032e09a7ef909fb8b023e216c",
     "idle-toast-repaint.patch": "3e3cd49b561b3a4a3aa864a53255330c54b8b386a9a9336e719111be5a24d190",
-    "NOTICE.md": "612151458044e83b2276658b1e6f6cb736717ba9a903fdaf49a44f95365d4a08"
+    "NOTICE.md": "db7e692919b6bc0674f413d80e139be29c930a936c560035870fd5403258d2d6",
+    "keyboard-dialog.patch": "fcdbe5b43fe8dcad76cd55040dfaeb67da058b8f565811bdf64079da01ec921d",
+    "keyboard-dialog-regressions.py": "8de3d279b38cda3d615a81a77e16b75b96abbc1a54f208367ef1c5c89edbf855",
+    "message-box-observer.patch": "4cdfe01c2a306d442ed4b458cc2f4a9db584165a6c058401d2071c6569ff7e1e",
+    "safe-guest-read.patch": "9753b7ed8d926d75995f51ecd18dd27fd2ca36eace474b406c5e9fcb2c40d918",
+    "message-box-regressions.py": "1107a1afabcd7027d3e16327482854b584ecc86fd29fc887e98049702ccd315b",
+    "safe-guest-read-regressions.py": "355d3ee2b001d98fe369067a8186edd4cc032f061c924f657d2a9ccdb11b916d",
+    "popup-controller.patch": "e5ff7570e3652e9c8936fe8ad82745aa240f49e6f3811c0ce13d644e760bfdde",
+    "popup-controller-regressions.py": "2501c03f0e063fb10daf3ed05f97cb2be3e40bcf9ea81ad7c9ce2c2976dd19d5"
   },
   "application_order": [
     "chrono-range.patch",
@@ -35,6 +43,10 @@
     "clock-timing.patch",
     "alertable-zero-readiness.patch",
     "presentation-timing.patch",
-    "idle-toast-repaint.patch"
+    "idle-toast-repaint.patch",
+    "keyboard-dialog.patch",
+    "message-box-observer.patch",
+    "safe-guest-read.patch",
+    "popup-controller.patch"
   ]
 }

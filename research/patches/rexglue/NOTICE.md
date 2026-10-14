@@ -29,8 +29,10 @@ The same headers credit: Tom Clay, 2026 — Adapted for ReXGlue runtime.
 - `include/rex/chrono/clock.h`
 - `include/rex/ui/imgui_dialog.h`
 - `include/rex/ui/imgui_drawer.h`
+- `include/rex/ui/window.h`
 - `src/graphics/vulkan/command_processor.cpp`
 - `src/kernel/xboxkrnl/xboxkrnl_rtl.cpp`
+- `src/kernel/xam/xam_ui.cpp`
 - `src/ui/imgui_dialog.cpp`
 - `src/ui/imgui_drawer.cpp`
 - `src/ui/vulkan/vulkan_presenter.cpp`
@@ -59,6 +61,19 @@ The same headers credit: Tom Clay, 2026 — Adapted for ReXGlue runtime.
 
 - `src/ui/vulkan/vulkan_device.cpp`
 
+## Affected source group 6
+
+Copyright 2020 Ben Vanik. All rights reserved.
+
+The same headers credit: Tom Clay, 2026 — Adapted for ReXGlue runtime.
+
+- `include/rex/system/xmemory.h`
+- `src/system/xmemory.cpp`
+- `include/rex/input/sdl/sdl_input_driver.h`
+- `src/input/sdl/sdl_input_driver.cpp`
+
 ## Local changes
 
 The evaluation changes were prepared with Codex assistance. Original authorship and copyright notices above refer to the upstream source, not authorship of these changes.
+
+The new `include/rex/ui/modal_gamepad_input.h` is original local integration code with an explicit BSD-3-Clause SPDX identifier; it does not inherit a claim of authorship from the upstream notices.

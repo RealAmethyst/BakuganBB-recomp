@@ -1,0 +1,145 @@
+--- a/src/kernel/xam/xam_ui.cpp
++++ b/src/kernel/xam/xam_ui.cpp
+@@ -32,11 +32,15 @@
+ #include <rex/ui/imgui_dialog.h>
+ #include <rex/ui/imgui_drawer.h>
+ #include <rex/ui/keyboard_dialog.h>
++#include <rex/ui/message_box_dialog.h>
+ #include <rex/ui/window.h>
+ #include <rex/ui/windowed_app_context.h>
+ 
+ namespace rex::ui {
+ namespace {
++MessageBoxDialogObserver message_box_dialog_observer;
++std::atomic<uint64_t> next_message_box_dialog_id{1};
++
+ KeyboardDialogObserver keyboard_dialog_observer;
+ std::atomic<uint64_t> next_keyboard_dialog_id{1};
+ 
+@@ -47,6 +51,10 @@
+ // Accessed only while drawing or closing dialogs on their UI thread.
+ std::unordered_map<ImGuiContext*, KeyboardNavigationState> keyboard_navigation;
+ }  // namespace
++
++void SetMessageBoxDialogObserver(MessageBoxDialogObserver observer) {
++  message_box_dialog_observer = std::move(observer);
++}
+ 
+ void SetKeyboardDialogObserver(KeyboardDialogObserver observer) {
+   keyboard_dialog_observer = std::move(observer);
+@@ -258,19 +266,33 @@
+       first_draw = true;
+     }
+     if (ImGui::BeginPopupModal(title_.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
++      if (!event_id_) {
++        event_id_ = ui::next_message_box_dialog_id.fetch_add(1, std::memory_order_relaxed);
++        Notify(ui::MessageBoxDialogEvent::Kind::Opened);
++      }
+       if (description_.size()) {
+         ImGui::Text("%s", description_.c_str());
+       }
+       if (first_draw) {
+         ImGui::SetKeyboardFocusHere();
+       }
++      int focused_button = -1;
+       for (size_t i = 0; i < buttons_.size(); ++i) {
+         if (ImGui::Button(buttons_[i].c_str())) {
+           chosen_button_ = static_cast<uint32_t>(i);
+           ImGui::CloseCurrentPopup();
+           Close();
+         }
++        if (ImGui::IsItemFocused()) {
++          focused_button = static_cast<int>(i);
++        }
+         ImGui::SameLine();
++      }
++      if (focused_button != focused_button_) {
++        focused_button_ = focused_button;
++        if (focused_button >= 0) {
++          Notify(ui::MessageBoxDialogEvent::Kind::Focused);
++        }
+       }
+       ImGui::Spacing();
+       ImGui::Spacing();
+@@ -280,13 +302,47 @@
+     }
+   }
+ 
++ protected:
++  void OnClose() override {
++    if (event_id_) {
++      Notify(ui::MessageBoxDialogEvent::Kind::Closed);
++      event_id_ = 0;
++    }
++    XamDialog::OnClose();
++  }
++
+  private:
++  void Notify(ui::MessageBoxDialogEvent::Kind kind) {
++    if (!ui::message_box_dialog_observer) {
++      return;
++    }
++    try {
++      ui::MessageBoxDialogEvent event;
++      event.kind = kind;
++      event.id = event_id_;
++      // Window titles and buttons hide their ImGui identifier suffix.
++      event.title = title_.substr(0, title_.find("##"));
++      event.description = description_;
++      event.total = static_cast<uint32_t>(buttons_.size());
++      if (kind == ui::MessageBoxDialogEvent::Kind::Focused) {
++        const auto& button = buttons_[focused_button_];
++        event.label = button.substr(0, button.find("##"));
++        event.position = static_cast<uint32_t>(focused_button_) + 1;
++      }
++      ui::message_box_dialog_observer(event);
++    } catch (...) {
++      REXKRNL_ERROR("Message box dialog observer failed");
++    }
++  }
++
+   bool has_opened_ = false;
+   std::string title_;
+   std::string description_;
+   std::vector<std::string> buttons_;
+   uint32_t default_button_ = 0;
+   uint32_t chosen_button_ = 0;
++  uint64_t event_id_ = 0;
++  int focused_button_ = -1;
+ };
+ 
+ // https://www.se7ensins.com/forums/threads/working-xshowmessageboxui.844116/
+--- /dev/null
++++ b/include/rex/ui/message_box_dialog.h
+@@ -0,0 +1,31 @@
++#pragma once
++
++#include <cstdint>
++#include <functional>
++#include <string>
++
++namespace rex::ui {
++
++struct MessageBoxDialogEvent {
++  enum class Kind { Opened, Focused, Closed };
++
++  Kind kind;
++  uint64_t id = 0;
++  std::string title;
++  std::string description;
++  // Visible button caption; empty for lifecycle events.
++  std::string label;
++  // One-based actual focused button, or zero for lifecycle events.
++  uint32_t position = 0;
++  uint32_t total = 0;
++};
++
++using MessageBoxDialogObserver = std::function<void(const MessageBoxDialogEvent&)>;
++
++// Install before runtime threads start; replace or clear only after they stop.
++// Called synchronously on the dialog UI thread. Copy any event data retained
++// beyond the callback. Observers must not reenter UI drawing or alter dialogs.
++// Exceptions are caught so observation cannot prevent guest completion.
++void SetMessageBoxDialogObserver(MessageBoxDialogObserver observer);
++
++}  // namespace rex::ui

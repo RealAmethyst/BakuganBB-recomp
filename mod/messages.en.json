@@ -21,5 +21,99 @@
   "log_failed": "Writing the diagnostic log failed. The launcher is still monitoring the game.",
   "speech_unavailable": "Automatic speech is unavailable. Status messages remain available as text.",
   "already_running": "A diagnostic launch is already running.",
-  "logs": "Diagnostic log: {path}"
+  "logs": "Diagnostic log: {path}",
+  "keyboard_blank": "Blank",
+  "keyboard_field": "{text}, text field",
+  "keyboard_hints": "Type text. Enter confirms. Escape cancels. Tab moves between the text field and buttons.",
+  "keyboard_space": "Space",
+  "keyboard_spaces": "{count} spaces",
+  "keyboard_deleted": "Deleted {text}",
+  "keyboard_selected": "{text}, selected",
+  "keyboard_position": "{position} of {total}",
+  "screen_position": "{position} of {total}",
+  "game_glyphs": {
+    "①": "A",
+    "②": "B",
+    "④": "X",
+    "⑥": "Start"
+  },
+  "artwork": {
+    "0": {
+      "logo_0": "Activision",
+      "logo_1": "NOWPRO",
+      "logo_2": "Premium Agency Inc.",
+      "logo_3": "Nelvana. A Corus Entertainment Company.",
+      "title": "Bakugan Battle Brawlers"
+    },
+    "1": {
+      "main_0": "STORY",
+      "main_1": "BATTLE ARENA",
+      "main_2": "TUTORIAL",
+      "main_3": "MY ROOM",
+      "main_4": "OPTIONS",
+      "popup_ok": "OK",
+      "popup_yes": "YES",
+      "popup_no": "NO"
+    },
+    "2": {
+      "main_0": "STORY",
+      "main_1": "KAMPFARENA",
+      "main_2": "TUTORIAL",
+      "main_3": "MEIN ZIMMER",
+      "main_4": "OPTIONEN",
+      "popup_ok": "OK",
+      "popup_yes": "JA",
+      "popup_no": "NEIN"
+    },
+    "3": {
+      "main_0": "AVENTURE",
+      "main_1": "ARÈNE",
+      "main_2": "INITIATION",
+      "main_3": "MA CHAMBRE",
+      "main_4": "OPTIONS",
+      "popup_ok": "OK",
+      "popup_yes": "OUI",
+      "popup_no": "NON"
+    },
+    "4": {
+      "main_0": "HISTORIA",
+      "main_1": "ARENA DE BATALLA",
+      "main_2": "TUTORIAL",
+      "main_3": "MI SALA",
+      "main_4": "OPCIONES",
+      "popup_ok": "ACEPTAR",
+      "popup_yes": "SÍ",
+      "popup_no": "NO"
+    },
+    "5": {
+      "main_0": "STORIA",
+      "main_1": "ARENA",
+      "main_2": "TUTORIAL",
+      "main_3": "LA MIA STANZA",
+      "main_4": "OPZIONI",
+      "popup_ok": "OK",
+      "popup_yes": "SÌ",
+      "popup_no": "NO"
+    },
+    "6": {
+      "main_0": "VERHAAL",
+      "main_1": "GEVECHTSARENA",
+      "main_2": "TUTORIAL",
+      "main_3": "MIJN KAMER",
+      "main_4": "OPTIES",
+      "popup_ok": "OK",
+      "popup_yes": "JA",
+      "popup_no": "NEE"
+    },
+    "7": {
+      "main_0": "STORY",
+      "main_1": "KAMPARENA",
+      "main_2": "ÖVNING",
+      "main_3": "MITT RUM",
+      "main_4": "ALTERNATIV",
+      "popup_ok": "OK",
+      "popup_yes": "JA",
+      "popup_no": "NEJ"
+    }
+  }
 }

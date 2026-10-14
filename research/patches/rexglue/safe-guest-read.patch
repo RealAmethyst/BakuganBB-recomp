@@ -1,0 +1,100 @@
+--- a/include/rex/system/xmemory.h
++++ b/include/rex/system/xmemory.h
+@@ -131,6 +131,8 @@
+ 
+ // Heap abstraction for page-based allocation.
+ class BaseHeap {
++  friend class Memory;
++
+  public:
+   virtual ~BaseHeap();
+ 
+@@ -422,6 +424,16 @@
+   // Copies a non-overlapping range of guest memory (like a memcpy).
+   void Copy(uint32_t dest, uint32_t src, uint32_t size);
+ 
++  // Copies readable, committed heap memory while holding the mapping locks.
++  // Physical aliases are supported; watched pages and ranges crossing heaps
++  // are rejected without invoking callbacks. Failure leaves destination intact.
++  // Destination must be caller-owned writable memory outside the guest arena.
++  // This does not synchronize game writes or establish object ownership. Like
++  // other heap operations, it must not race initialization, reset, save/restore,
++  // disposal, or MMIO registration. Acquire the global critical region before
++  // any other caller-held locks; otherwise call without holding other locks.
++  bool TryReadVirtual(uint32_t address, void* destination, size_t length);
++
+   // Searches the given range of guest memory for a run of dword values in
+   // big-endian order.
+   uint32_t SearchAligned(uint32_t start, uint32_t end, const uint32_t* values, size_t value_count);
+--- a/src/system/xmemory.cpp
++++ b/src/system/xmemory.cpp
+@@ -476,6 +476,69 @@
+   std::memcpy(pdest, psrc, size);
+ }
+ 
++bool Memory::TryReadVirtual(uint32_t address, void* destination, size_t length) {
++  if (!virtual_membase_ || !address || !destination || !length ||
++      length > (uint64_t{1} << 32) - address) {
++    return false;
++  }
++  BaseHeap* heap = LookupHeap(address);
++  if (!heap || uint64_t(address) + length > uint64_t(heap->heap_base_) + heap->heap_size_) {
++    return false;
++  }
++
++  // Physical access watches use the global lock. Always acquire it first,
++  // including on hosts where ordinary heap operations need only heap_mutex_.
++  auto global_lock = global_critical_region_.Acquire();
++  std::lock_guard<std::recursive_mutex> heap_lock(heap->heap_mutex_);
++  std::unique_lock<std::recursive_mutex> physical_lock;
++  const bool physical = heap->heap_type_ == HeapType::kGuestPhysical;
++  if (physical) {
++    // PhysicalHeap allocation takes the alias lock before the parent lock.
++    physical_lock = std::unique_lock<std::recursive_mutex>(heaps_.physical.heap_mutex_);
++  }
++
++  const auto readable = [length](const BaseHeap& source, uint32_t source_address) {
++    if (source_address < source.heap_base_ ||
++        uint64_t(source_address) + length > uint64_t(source.heap_base_) + source.heap_size_) {
++      return false;
++    }
++    const uint32_t first = (source_address - source.heap_base_) >> source.page_size_shift_;
++    const uint32_t last = uint32_t((uint64_t(source_address) + length - 1 - source.heap_base_) >>
++                                   source.page_size_shift_);
++    if (last >= source.page_table_.size()) {
++      return false;
++    }
++    for (uint32_t page = first; page <= last; ++page) {
++      const auto& entry = source.page_table_[page];
++      if (!(entry.state & kMemoryAllocationCommit) ||
++          !(entry.current_protect & kMemoryProtectRead)) {
++        return false;
++      }
++    }
++    return true;
++  };
++  if (!readable(*heap, address)) {
++    return false;
++  }
++  if (physical) {
++    const uint32_t physical_address = static_cast<PhysicalHeap*>(heap)->GetPhysicalAddress(address);
++    if (!readable(heaps_.physical, physical_address)) {
++      return false;
++    }
++    const uint64_t relative = uint64_t(address) - heap->heap_base_ + heap->host_address_offset_;
++    const uint32_t first = uint32_t(relative / system_page_size_);
++    const uint32_t last = uint32_t((relative + length - 1) / system_page_size_);
++    for (uint32_t page = first; page <= last; ++page) {
++      if (heap->IsHostPageWriteWatched(page)) {
++        return false;
++      }
++    }
++  }
++
++  std::memcpy(destination, heap->TranslateRelative(address - heap->heap_base_), length);
++  return true;
++}
++
+ uint32_t Memory::SearchAligned(uint32_t start, uint32_t end, const uint32_t* values,
+                                size_t value_count) {
+   assert_true(start <= end);

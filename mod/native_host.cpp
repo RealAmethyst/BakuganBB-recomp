@@ -10,8 +10,11 @@
 #include <rex/rex_app.h>
 
 #include "battle_brawlers_init.h"
+#include "native_game_ui.h"
 
 REXCVAR_DECLARE(bool, vulkan_timing_diagnostics);
+
+void InstallDialogSpeech();
 
 namespace {
 
@@ -50,6 +53,7 @@ class BattleBrawlersHost final : public rex::ReXApp {
   }
 
   void OnPreSetup(rex::RuntimeConfig& config) override {
+    InstallDialogSpeech();
     config.gpu_plugin = "xenos";
     REXCVAR_SET(vulkan_timing_diagnostics, true);
   }
@@ -85,7 +89,13 @@ class BattleBrawlersHost final : public rex::ReXApp {
     return result;
   }
 
-  void OnPostLoadXexImage() override { Report("image_loaded"); }
+  void OnPostLoadXexImage() override {
+    auto* memory = runtime()->memory();
+    SetGameSpeechReader([memory](uint32_t address, void* output, size_t size) {
+      return memory && memory->TryReadVirtual(address, output, size);
+    });
+    Report("image_loaded");
+  }
   void OnPreLaunchModule() override { Report("preparing_thread"); }
   void OnPostLaunchModule(rex::system::XThread*) override { Report("thread_created"); }
   void OnGuestThreadExit(rex::system::XThread*) override { Report("guest_exited"); }

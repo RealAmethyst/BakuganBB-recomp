@@ -1,6 +1,6 @@
 # ReXGlue evaluation patches
 
-These separate candidate changes apply to ReXGlue revision `c94f5ebdcb3c9d1a460ca48e04f9758448f8d518`. They are retained for reproducible evaluation, not permanent dependency adoption. All ten patches pass sequential application checks against that revision in the order recorded in `manifest.json`. Apply `gapfill-backward-exit.patch` before `gapfill-indirect-terminator.patch`; both modify the same partitioner. Apply `clock-timing.patch` after `chrono-range.patch`; both modify clock headers.
+These separate candidate changes apply to ReXGlue revision `c94f5ebdcb3c9d1a460ca48e04f9758448f8d518`. They are retained for reproducible evaluation, not permanent dependency adoption. Application order and file identities are recorded in `manifest.json`. Apply `gapfill-backward-exit.patch` before `gapfill-indirect-terminator.patch`; both modify the same partitioner. Apply `clock-timing.patch` after `chrono-range.patch`; both modify clock headers.
 
 - [chrono-range.patch](chrono-range.patch): preserve 100-nanosecond clock range, validate calendar recomposition, and add boundary/actual-export tests. Tracked by [issue 7](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/7).
 - [depfile-expectations.patch](depfile-expectations.patch): correct expected escapes and add dollar-sign coverage; production escaping is unchanged. Tracked by [issue 8](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/8).
@@ -18,6 +18,61 @@ These separate candidate changes apply to ReXGlue revision `c94f5ebdcb3c9d1a460c
 - [idle-toast-repaint.patch](idle-toast-repaint.patch): stop empty achievement notifications from driving continuous UI repaint, retain ordinary-dialog wake/animation, and marshal notification ownership onto the UI thread. [Issue 19](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/19) and the [timing record](../../timing-contracts.md) own the 33-case actual-method synthetic checks, independent review and integration evidence. Exact fixture generation, commands and source hashes are retained in the private evidence collection. This changes UI class layouts; rebuild the runtime and every application/plugin consumer together. Windows/macOS execution remains untested.
 
 The [first-build report](../../first-build-gates.md) owns gap-fill, generated-code compilation and graphics/audio results. The [trial report](../../linux-toolchain-trial.md) owns build/test results and limitations. Patch identities are in [manifest.json](manifest.json). Apply to a separate checkout at the stated revision; retain the unmodified baseline for comparisons. No game inputs are involved.
+
+## Keyboard dialog candidate
+
+[keyboard-dialog.patch](keyboard-dialog.patch) adds an optional UI-thread observer for actual keyboard-dialog lifetimes, focus and editing. It scopes keyboard navigation to those dialogs, adds Escape cancellation, corrects the primary cancellation result and enforces the guest UTF-16 capacity without losing an existing name suffix. The [Story investigation](../../story-entry-freeze.md) owns the game consumer trace and user-selected interaction. This does not establish the cause of the reported Story freeze or provide main-menu narration.
+
+[keyboard-dialog-regressions.py](keyboard-dialog-regressions.py) extracts the patched dialog and completion callback into an original synthetic harness linked with pinned ImGui core. In an isolated environment, run `python keyboard-dialog-regressions.py /path/to/patched-sdk /path/to/new-output`. The output directory must not exist. Clang ASan/UBSan checks cover actual opening/focus/edit/close events, visible title suffix handling, keyboard navigation, optional/throwing observers, UTF-8 positions, UTF-16 capacities and cancellation without output writes. It uses no platform/render backend, game input or live clipboard. The fake dialog base and guest-buffer writer limit coverage; the full application and listening behavior still need user testing.
+
+Install the observer before runtime threads start, or clear it after they stop. Callbacks must copy retained event data and must not reenter UI drawing. The pinned ImGui configuration still rejects newly entered supplementary Unicode characters; this patch does not change its character ABI. Native Windows/macOS builds remain untested.
+
+## Message-box observer candidate
+
+[message-box-observer.patch](message-box-observer.patch) adds an optional observer for actual message-box opening, focused buttons and native closing. Title and button events use the captions ImGui displays, including its hidden `##` suffix handling. Body text remains literal. Button positions come from the actual button list. Install or clear the observer only while runtime threads are stopped; callbacks are synchronous on the UI thread and must copy any retained values. Observer exceptions do not prevent native completion.
+
+Applied alone, the observer patch preserves existing controls, requested-default handling and completion results: actual initial focus remains on the first button even when the initialized result names another requested default. It reports real ImGui focus rather than inferring focus from that result. The later popup-controller patch corrects initial focus to the requested button.
+
+[message-box-regressions.py](message-box-regressions.py) extracts the actual dialog and completion callback and links pinned ImGui core. The current fixture targets the combined patch stack, including popup-controller.patch; it expects actual focus on the requested default and deliberately fails that assertion against the preceding observer-only implementation. In an isolated environment, run `python3 message-box-regressions.py /path/to/patched-sdk /path/to/new-output`. It also verifies opening/focus/closing, visible captions, positions, no idle repetition, native selection/completion, and absent or throwing observers under ASan/UBSan. It uses no platform/render backend, game input or live clipboard. Its fake dialog base limits application-lifetime coverage.
+
+## Host popup controller candidate
+
+[popup-controller.patch](popup-controller.patch) follows the observer and guarded-read patches. It gives the default SDL input backend D-pad Left/Right navigation and A confirmation for focused host message boxes. The actual requested button receives initial focus. Native game-rendered popups keep their original controls.
+
+A window-owned value channel connects the existing SDL event watch to ImGui's gamepad events. Modal capture suppresses guest input until dismissal, then masks captured digital presses until their releases have reached the drained driver state. Sequence tracking preserves fresh release/repress input without exposing stale cached presses. Child attachment, focus changes and disconnect invalidate queued UI edges. Message construction and completion/fence installation occur together on the UI thread.
+
+[popup-controller-regressions.py](popup-controller-regressions.py) exercises actual dialog, drawer input, channel, dispatch, and SDL buffering methods using synthetic events and pinned ImGui core. Run inside an isolated filesystem/runtime without desktop or input access: `python3 popup-controller-regressions.py /path/to/patched-sdk /path/to/new-output`. Actual-source ASan/UBSan fixtures and separate concurrent channel/driver TSan runs pass. The updated message fixture rejects the preceding first-button focus behavior and accepts the requested default; the existing keyboard fixture also passes.
+
+Physical controller and listening checks remain necessary. The alternate Windows XInput backend is unchanged and does not gain this navigation. Windows/macOS execution was not tested. Existing shutdown ownership must stop guest calls before destroying the driver/window; this patch does not make concurrent object destruction safe. `XamShowMessageBoxUIEx` remains outside coverage.
+
+## Guarded guest-read candidate
+
+[safe-guest-read.patch](safe-guest-read.patch) adds `Memory::TryReadVirtual(address, destination, length)`. It holds the runtime global critical region, the selected heap mutex, and the physical parent mutex when applicable across validation and copying. It supports all three guest physical aliases. Every covered guest page and physical parent page must be committed and readable; watched physical pages fail closed without invoking callbacks. Null/empty, overflowing, missing-heap and cross-heap ranges are rejected without changing the destination.
+
+The caller owns a writable destination outside the guest arena. This protects mapping/access lifetime; it does not establish game-object ownership or make concurrently written contents an atomic snapshot. Initialization, reset, save/restore, disposal and MMIO registration remain quiescent lifecycle operations. Current MMIO windows lie outside the managed heaps and are rejected.
+
+Acquire the global critical region before other caller-held locks. Keep output and other I/O outside that region; an observer can enqueue copied values for a separate output worker. The guarded reader itself performs no output or guest calls.
+
+[safe-guest-read-regressions.py](safe-guest-read-regressions.py) provides an original synthetic Linux x86-64 fixture with generic input paths. Run it inside an isolated environment with a patched SDK and a matching built runtime library:
+
+```sh
+python3 safe-guest-read-regressions.py /path/to/patched-sdk /path/to/new-output \
+  --library /path/to/librexruntime.so --build-include /path/to/sdk-build/include
+```
+
+The fixture checks the complete modified translation unit, then compiles exact extracted read/protect/decommit methods and links the SDK's real allocation, mapping, protection and lock implementations. It uses UBSan with errors non-recovering. SDK fixed-address arena mapping conflicts with ASan's shadow layout, so this real-mapping fixture does not use ASan or add fault-recovery shims.
+
+Coverage includes all seven heap ranges, cross-page rejection, physical watch and parent-protection rejection, release, argument boundaries, and both current MMIO windows. Three reader threads perform 360,000 racing reads against 24,000 protect/decommit cycles across virtual and physical heaps. Controlled inaccessible samples avoid assuming a particular scheduler interleaving. Failed reads must leave destination bytes intact. Linux with 4 KB host pages is tested; Windows/macOS and coarse host-page execution remain untested.
+
+## Integrated patch verification
+
+On 2026-10-14, all 14 patches in manifest order applied cleanly to a fresh archive of the pinned revision, with every manifest file hash verified. The final controller SDK build's mounted source matched 27 of the 31 affected files byte for byte. The comparison resolved bind mounts in order, including directory mounts that replace earlier individual header mounts. Matching files include the combined toast/keyboard/message-box/controller changes and guarded-read implementation.
+
+The public keyboard, message-box and popup-controller fixtures passed ASan/UBSan against the matching combined sources. Concurrent channel and actual SDL driver-drain fixtures also passed TSan. The requested-default focus assertion failed against the preceding observer-only class as expected. The keyboard fixture conditionally includes the message-box observer header so its extracted shared observer namespace compiles after both patches.
+
+The public guarded-read fixture previously passed against its built runtime under UBSan; its affected sources are unchanged in this final comparison. Tests ran with isolated filesystems, runtime directories and networking, without UI backends or access to live desktop services. These source and synthetic checks do not establish physical-controller or listening behavior.
+
+Four codegen inputs in that runtime build remained at the pinned baseline: `include/rex/codegen/function_graph.h`, `src/codegen/builders/context.cpp`, `src/codegen/builders/control_flow.cpp`, and `src/codegen/phase_gapfill.cpp`. That runtime build therefore does not establish integration of the codegen patches. Their separate candidate-object and generated-code evidence is described above; do not equate successful patch application with a complete codegen build.
 
 ## Compatibility limits
 

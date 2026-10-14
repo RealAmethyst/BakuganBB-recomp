@@ -10,6 +10,8 @@ import unittest
 from unittest.mock import patch
 
 import launch
+from test_keyboard_speech import event, Speech
+from test_screen_speech import event as screen_event
 
 
 class RecordingReporter:
@@ -21,6 +23,48 @@ class RecordingReporter:
 
 
 class SupervisorTests(unittest.TestCase):
+    def test_option_message_transport_and_log_redaction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            speech = Speech()
+            messages = json.loads(Path(__file__).with_name("messages.en.json").read_text())
+            reporter = launch.Reporter(messages, speech)
+            payloads = [screen_event("opened", source="message", body="Synthetic private prompt"),
+                        screen_event("focused", source="message", label="Synthetic option",
+                                     position=1, total=2)]
+            script = "print('BRAWLERS_STATUS:thread_created'); " + "; ".join(
+                f"print({'BRAWLERS_SCREEN:' + json.dumps(payload)!r})" for payload in payloads)
+            script += "; print('BRAWLERS_SCREEN:invalid private text')"
+            with patch("sys.stdout", io.StringIO()):
+                code = launch.supervise([sys.executable, "-c", script], root, root / "log", reporter)
+            self.assertEqual(code, 0)
+            log = (root / "log").read_text()
+            self.assertNotIn("Synthetic", log)
+            self.assertNotIn("invalid private text", log)
+            self.assertIn("message opened id=1", log)
+            self.assertIn(("Synthetic private prompt", True), speech.calls)
+            self.assertIn(("Synthetic option, 1 of 2", False), speech.calls)
+
+    def test_native_dialog_speech_and_log_redaction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            speech = Speech()
+            messages = json.loads(Path(__file__).with_name("messages.en.json").read_text())
+            reporter = launch.Reporter(messages, speech)
+            payload = json.dumps(event(text="Synthetic private name"))
+            script = ("import json; print('BRAWLERS_STATUS:thread_created'); "
+                      f"print('BRAWLERS_UI:' + {payload!r}); "
+                      "print('BRAWLERS_UI:invalid private content')")
+            with patch("sys.stdout", io.StringIO()):
+                code = launch.supervise([sys.executable, "-c", script], root,
+                                        root / "log", reporter)
+            self.assertEqual(code, 0)
+            log = (root / "log").read_text()
+            self.assertNotIn("Synthetic private name", log)
+            self.assertNotIn("invalid private content", log)
+            self.assertIn("opened id=1", log)
+            self.assertIn(("Synthetic private name, text field", False), speech.calls)
+
     def installation(self, root):
         (root / "bin").mkdir()
         (root / "data").mkdir()

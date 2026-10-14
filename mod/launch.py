@@ -11,6 +11,8 @@ import sys
 import tempfile
 
 from prism_speech import PrismSpeech
+from keyboard_speech import KeyboardSpeech, PREFIX as UI_PREFIX, parse_event
+from screen_speech import ScreenSpeech, PREFIX as SCREEN_PREFIX, parse_event as parse_screen
 
 
 PREFIX = "BRAWLERS_STATUS:"
@@ -27,6 +29,8 @@ class Reporter:
     def __init__(self, messages, speech=None):
         self.messages = messages
         self.speech = speech
+        self.dialogs = KeyboardSpeech(messages, speech)
+        self.screens = ScreenSpeech(messages, speech)
 
     def report(self, key, *, speak=True, **values):
         text = self.messages[key].format(**values)
@@ -71,6 +75,27 @@ def supervise(command, cwd, log_path, reporter):
         with child.stdout:
             for line in child.stdout:
                 # Continue draining and owning the process if the disk fills.
+                if line.startswith(SCREEN_PREFIX):
+                    event = parse_screen(line[len(SCREEN_PREFIX):])
+                    if event is None:
+                        record("BRAWLERS_SCREEN:invalid event; text omitted\n")
+                    else:
+                        record(f"BRAWLERS_SCREEN:{event['source']} {event['kind']} "
+                               f"id={event['id']}; text omitted\n")
+                        screens = getattr(reporter, "screens", None)
+                        if screens is not None:
+                            screens.handle(event)
+                    continue
+                if line.startswith(UI_PREFIX):
+                    event = parse_event(line[len(UI_PREFIX):])
+                    if event is None:
+                        record("BRAWLERS_UI:invalid event; text omitted\n")
+                    else:
+                        record(f"BRAWLERS_UI:{event['kind']} id={event['id']}; text omitted\n")
+                        dialogs = getattr(reporter, "dialogs", None)
+                        if dialogs is not None:
+                            dialogs.handle(event)
+                    continue
                 record(line)
                 if not line.startswith(PREFIX):
                     continue
