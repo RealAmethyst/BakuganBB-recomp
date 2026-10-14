@@ -1,4 +1,4 @@
-# Pinned baseline instruction events. See research/localization-consumers.md.
+# Pinned baseline instruction events. See docs/localization-consumers.md.
 # No instruction is replaced, skipped or permitted to mutate CPU registers.
 
 [[midasm_hook]]

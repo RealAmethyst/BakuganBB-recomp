@@ -6,7 +6,7 @@ Inspection date: 2026-10-14. Owning task: [issue 12](https://github.com/RealAmet
 
 Prepare a private, user-controlled diagnostic launch. The native executable remains a static recompilation; the launcher supervises that process. Compilation and offline checks do not establish boot, rendering, game audio, menu accessibility or playability. The original launch scope below is followed by the keyboard-dialog milestone recorded under Private data and package.
 
-The accessibility designer selected automatic startup/failure speech through Prism, with standalone text-to-speech backends disabled. Speech targets a running screen reader; absence of one should be silent. In particular, direct Speech Dispatcher and SAPI output are excluded. Diagnostic wording lives in `mod/messages.en.json`. Later game-content narration is recorded below separately from the initial milestone.
+The accessibility designer selected automatic startup/failure speech through Prism, with standalone text-to-speech backends disabled. Speech targets a running screen reader; absence of one should be silent. In particular, direct Speech Dispatcher and SAPI output are excluded. Diagnostic wording lives in `resources/messages.en.json`. Later game-content narration is recorded below separately from the initial milestone.
 
 ## Save, popup and logo-timing follow-up
 
@@ -62,7 +62,7 @@ The first `.1` native executable had SHA-256 `6584f5585ae9809c514f8f77aebc93c3a9
 
 ## Graphics contract
 
-The [scalar-layout candidate](patches/rexglue/scalar-layout.patch) requires the uniform layout already used by the shaders, rather than changing the host/shader ABI. Vulkan 1.2 and later use the core feature; earlier versions use the extension feature. Unsupported devices are rejected before logical-device creation with a device-named diagnostic. Non-GPU presentation-only behavior is preserved.
+The [scalar-layout candidate](../patches/rexglue/scalar-layout.patch) requires the uniform layout already used by the shaders, rather than changing the host/shader ABI. Vulkan 1.2 and later use the core feature; earlier versions use the extension feature. Unsupported devices are rejected before logical-device creation with a device-named diagnostic. Non-GPU presentation-only behavior is preserved.
 
 An original fixture exercises the actual baseline and candidate `vulkan_device.cpp` through synthetic dispatch functions. Results: baseline 9/19, candidate 19/19. Ten regressions fail before and pass after; nine controls are preserved. Checks cover Vulkan 1.0/1.1 extension paths, 1.2/1.3 core paths, exclusive feature chains, feature enablement, missing support and existing blend/swapchain requirements. The unchanged shader ABI retains the earlier 120-case validator evidence.
 
@@ -80,7 +80,7 @@ Source inspection also found that the imported audio registration entrypoint der
 
 ## Diagnostic behavior and verification
 
-`mod/native_host.cpp` emits startup-stage events through verified ReXApp hooks. `thread_created` means the main guest thread exists but is still suspended at that callback; it is not a gameplay-success event. An error-level log sink reports errors without relying solely on process exit status. Early SDL failures occur before these hooks and are caught by the launcher from process termination and captured output.
+`src/runtime/native_host.cpp` emits startup-stage events through verified ReXApp hooks. `thread_created` means the main guest thread exists but is still suspended at that callback; it is not a gameplay-success event. An error-level log sink reports errors without relying solely on process exit status. Early SDL failures occur before these hooks and are caught by the launcher from process termination and captured output.
 
 The supervisor treats a zero process exit before thread creation as failure, records abnormal exits, deduplicates known events and ignores unknown event names for speech. If log writing fails after process creation, it continues draining output and supervising the child while retaining the launch lock. Failures before log creation do not start the child.
 

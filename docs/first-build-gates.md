@@ -14,12 +14,12 @@ Pinned ReXGlue revision: `c94f5ebdcb3c9d1a460ca48e04f9758448f8d518`. The first o
 
 In `src/codegen/phase_gapfill.cpp`, an unconditional relative branch splits a linear gap segment only when its target is already a registered callable. A backward exit to an earlier unregistered target can absorb a following leaf into that segment; discovery stops at the preceding exit and misses the leaf. If the segment begins inside an already registered owner, it may instead be skipped wholesale. Later branches into the missing leaf fail validation.
 
-The [candidate patch](patches/rexglue/gapfill-backward-exit.patch) also splits when the branch target precedes the current linear segment, while retaining the own-entry exception. This is a partitioning heuristic, not proof that every backward exit is a semantic tail call. No game addresses, forced validation, silent no-ops or error suppression were added. [Local candidate verification, issue 9](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/9).
+The [candidate patch](../patches/rexglue/gapfill-backward-exit.patch) also splits when the branch target precedes the current linear segment, while retaining the own-entry exception. This is a partitioning heuristic, not proof that every backward exit is a semantic tail call. No game addresses, forced validation, silent no-ops or error suppression were added. [Local candidate verification, issue 9](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/9).
 
 Verification:
 
 - Ten original synthetic cases: **baseline 8/10; candidate 10/10**. Two defects fail before/pass after. Eight controls preserve existing owners, own-entry recursion, interior backward loops, forward branch behavior, call fallthrough, conditional fallthrough and ordinary leaves.
-- Ownership checks use actual blocks and instruction lists, not just a function's numeric extent. The [original fixture](patches/rexglue/gapfill-regressions.cpp) contains no game input.
+- Ownership checks use actual blocks and instruction lists, not just a function's numeric extent. The [original fixture](../patches/rexglue/gapfill-regressions.cpp) contains no game input.
 - The existing SDK unit binary, relinked with the candidate phase, passes with four unchanged upstream BitStream skips. The full PowerPC suite was not rerun for this analysis-only change; its earlier result is in [the SDK trial](linux-toolchain-trial.md).
 - Corrected private analysis ends with **46,135 functions and zero validation errors**. All 110 formerly unresolved targets now belong to actual blocks; all 228 watched addresses have block coverage. Ordinary codegen exits successfully without force.
 - The two previously missing Ghidra switch listings are covered by the translator already: handler `0x821BE538`, table `0x821BE56C`, 27 targets; handler `0x822D79C0`, table `0x822D7A00`, 12 targets. The verified request arms and calls are present. These cases did not need game-specific configuration.

@@ -12,7 +12,7 @@ __pycache__/
 *.log
 *.dmp
 *.core
-core
+/core
 *.xex
 *.iso
 *.xiso

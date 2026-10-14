@@ -1,4 +1,4 @@
-// Passive keyboard-request diagnostics; see research/story-entry-freeze.md.
+// Passive keyboard-request diagnostics; see docs/story-entry-freeze.md.
 #include <atomic>
 #include <cfenv>
 #include <chrono>

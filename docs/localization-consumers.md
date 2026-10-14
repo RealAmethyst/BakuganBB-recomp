@@ -164,7 +164,7 @@ The original message service `0x823B75F8` passes title, body, button array, coun
 
 ## Semantic events and recovered behavior
 
-The implementation uses the pinned recompiler's `midasm_hook` support at original state transitions and native record loads. [game_events.toml](../mod/game_events.toml) is the reproducible 48-site configuration. It observes register values after the original instruction without replacing instructions or changing registers. Function wrappers retain constructor/destructor ownership and nested rendering scopes; they do not poll menu or title state on every update.
+The implementation uses the pinned recompiler's `midasm_hook` support at original state transitions and native record loads. [game_events.toml](../config/game_events.toml) is the reproducible 48-site configuration. It observes register values after the original instruction without replacing instructions or changing registers. Function wrappers retain constructor/destructor ownership and nested rendering scopes; they do not poll menu or title state on every update.
 
 These addresses apply only to the executable identity in [the baseline record](executable-baseline.md). Revalidate the original instructions and consumers before applying the configuration to any different input. Private collections `menu-speech-followup-20261014` and `startup-event-hooks-20261014` retain the fresh full instruction traces, dispatcher tables, register contracts and rejected alternatives. No database annotations were added.
 
@@ -244,7 +244,7 @@ The actual render chain is `0x823A9908 → 0x82395428 → 0x823A9528`. Both scra
 
 All seven save-layout resources `0x9F4..0x9FA` are byte-identical. Their actual layout places name, date and time at increasing vertical offsets 1, 31 and 61 under the same positively scaled parent. Position opcode three reaches `0x823D0468`, which consumes the signed coordinate halfwords. An empty drawn name is omitted. The inspected atlases supply no heading, so speech adds none.
 
-The exact after-instruction state events are in `mod/game_events.toml`: initial active stores at `0x822D46F0/0x822D47DC`, six return-to-active stores, and five active-input suspension stores. These change activity, not native lifetime. The shared selector event after `0x821DF0FC` supplies selector `r31` and current `r27` only after original branches reject unchanged and invalid selections. A runtime setup observer verifies the actual native bounds before emitting a list position.
+The exact after-instruction state events are in `config/game_events.toml`: initial active stores at `0x822D46F0/0x822D47DC`, six return-to-active stores, and five active-input suspension stores. These change activity, not native lifetime. The shared selector event after `0x821DF0FC` supplies selector `r31` and current `r27` only after original branches reject unchanged and invalid selections. A runtime setup observer verifies the actual native bounds before emitting a list position.
 
 ### Native popup family and artwork
 

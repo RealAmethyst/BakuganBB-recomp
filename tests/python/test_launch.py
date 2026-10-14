@@ -14,6 +14,9 @@ from test_keyboard_speech import event, Speech
 from test_screen_speech import event as screen_event
 
 
+MESSAGES = Path(__file__).resolve().parents[2] / "resources" / "messages.en.json"
+
+
 class RecordingReporter:
     def __init__(self):
         self.events = []
@@ -27,7 +30,7 @@ class SupervisorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             speech = Speech()
-            messages = json.loads(Path(__file__).with_name("messages.en.json").read_text())
+            messages = json.loads(MESSAGES.read_text(encoding="utf-8"))
             reporter = launch.Reporter(messages, speech)
             payloads = [screen_event("opened", source="message", body="Synthetic private prompt"),
                         screen_event("focused", source="message", label="Synthetic option",
@@ -49,7 +52,7 @@ class SupervisorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             speech = Speech()
-            messages = json.loads(Path(__file__).with_name("messages.en.json").read_text())
+            messages = json.loads(MESSAGES.read_text(encoding="utf-8"))
             reporter = launch.Reporter(messages, speech)
             payload = json.dumps(event(text="Synthetic private name"))
             script = ("import json; print('BRAWLERS_STATUS:thread_created'); "
@@ -177,7 +180,7 @@ class SupervisorTests(unittest.TestCase):
             self.installation(root)
             (root / "user-data").touch()
             (root / "messages.en.json").write_text(
-                Path(__file__).with_name("messages.en.json").read_text())
+                MESSAGES.read_text(encoding="utf-8"))
             with patch.object(launch, "__file__", str(root / "launch.py")), \
                     patch.object(sys, "argv", ["launch.py", "--no-speech"]), \
                     patch.object(sys, "stdout", new_callable=io.StringIO) as output:
@@ -198,7 +201,7 @@ class SupervisorTests(unittest.TestCase):
             spawn.assert_not_called()
 
     def test_all_events_have_localized_messages(self):
-        messages = json.loads(Path(__file__).with_name("messages.en.json").read_text())
+        messages = json.loads(MESSAGES.read_text(encoding="utf-8"))
         self.assertTrue(launch.EVENTS <= messages.keys())
 
 

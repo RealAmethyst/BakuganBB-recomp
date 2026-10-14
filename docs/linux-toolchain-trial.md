@@ -53,7 +53,7 @@ Four `BitStream::Write` tests explicitly skip: byte-aligned writes, preservation
 
 A separate checkout at the same pinned revision now contains two focused candidate changes: [clock range, issue 7](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/7), and [depfile expectations, issue 8](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues/8). The original baseline source and build remain unchanged.
 
-The separate [candidate patches, license and hash manifest](patches/rexglue/README.md) are retained locally. Both apply cleanly to the pinned baseline. Dependencies were copied from its pinned source folders; their copied `.git` pointers are not independently initialized submodule repositories. Candidate status therefore uses explicit file diffs or ignores submodule metadata. No dependency upgrade was made.
+The separate [candidate patches, license and hash manifest](../patches/rexglue/README.md) are retained locally. Both apply cleanly to the pinned baseline. Dependencies were copied from its pinned source folders; their copied `.git` pointers are not independently initialized submodule repositories. Candidate status therefore uses explicit file diffs or ignores submodule metadata. No dependency upgrade was made.
 
 Clock conversion now returns a system-epoch time point with 100-nanosecond duration, retaining the NT clock's precision and range instead of implicitly narrowing to native Linux nanoseconds. Calendar recomposition retains milliseconds until it has validated the date against the signed NT limit. Invalid fields return false without changing the guest's output. No exception path was introduced.
 

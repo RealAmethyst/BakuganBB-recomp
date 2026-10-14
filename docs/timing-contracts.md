@@ -65,7 +65,7 @@ The broader audit is not complete console equivalence. Positive absolute guest d
 
 ## Passive game diagnostics
 
-`mod/native_timing.cpp` wraps verified generated symbols and forwards the original implementations. It does not change guest state, poll game structures or supply game content speech. Instrumentation restores the host floating-point environment around its own calculations.
+`src/game/native_timing.cpp` wraps verified generated symbols and forwards the original implementations. It does not change guest state, poll game structures or supply game content speech. Instrumentation restores the host floating-point environment around its own calculations.
 
 - `0x823AFA68`: incoming `r4` identifies a new movie request. Internal loop replay may omit this request.
 - `0x82190990`: incoming `r3` identifies the wrapper; returned `r3` is exactly zero or one. A successful start records setup completion, not the first displayed frame or audible sample.

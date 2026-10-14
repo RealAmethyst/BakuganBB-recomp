@@ -1,5 +1,5 @@
 // Semantic observations for the pinned, statically translated executable.
-// Original consumer evidence is recorded in research/localization-consumers.md.
+// Original consumer evidence is recorded in docs/localization-consumers.md.
 #include "native_game_ui.h"
 #include "native_speech.h"
 #include "game_speech_queue.h"

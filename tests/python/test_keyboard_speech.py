@@ -7,6 +7,9 @@ import unittest
 from keyboard_speech import KeyboardSpeech, parse_event
 
 
+MESSAGES = Path(__file__).resolve().parents[2] / "resources" / "messages.en.json"
+
+
 class Speech:
     def __init__(self):
         self.calls = []
@@ -26,7 +29,7 @@ def event(kind="opened", text="", **values):
 class KeyboardTests(unittest.TestCase):
     def setUp(self):
         self.speech = Speech()
-        messages = json.loads(Path(__file__).with_name("messages.en.json").read_text())
+        messages = json.loads(MESSAGES.read_text(encoding="utf-8"))
         self.reader = KeyboardSpeech(messages, self.speech)
 
     def feed(self, value):

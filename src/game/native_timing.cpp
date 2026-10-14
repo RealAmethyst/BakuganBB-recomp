@@ -1,4 +1,4 @@
-// Passive diagnostics for the verified baseline; see research/timing-contracts.md.
+// Passive diagnostics for the verified baseline; see docs/timing-contracts.md.
 #include <chrono>
 #include <cfenv>
 #include <cstdio>

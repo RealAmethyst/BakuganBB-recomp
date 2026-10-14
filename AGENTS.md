@@ -1,35 +1,21 @@
-# Bakugan Battle Brawlers native PC port
+# Repository instructions
 
-## Project direction
+## Direction and evidence
 
-- Statically recompile the Xbox 360 version of Bakugan Battle Brawlers (2009) into a native x86-64 application. Linux is the primary platform; Vulkan is the primary graphics API.
-- Preserve original gameplay and content behavior. Full accessibility and complete start-to-finish playability are core requirements. Higher resolutions, frame-rate changes and other enhancements follow the accurate, playable foundation.
-- Native execution may use reimplemented console services and graphics translation. The deliverable must not require running a traditional Xbox 360 emulator.
-- Establish small, verifiable milestones. XenonRecomp and XenosRecomp are candidates, not confirmed solutions for this game. Verify the target executable, runtime requirements and shader behavior before selecting implementations.
-- The multilingual Xbox 360 baseline candidate was accepted on 2026-10-14. Initial executable identity and localization evidence are recorded in `research/executable-baseline.md`; distinguish verified file metadata from unverified runtime behavior.
+- Build an accurate native port of the Xbox 360 game, with accessibility accompanying each playable milestone. Linux/Vulkan is the first target; do not claim other platforms are validated.
+- Follow [CONTRIBUTING.md](CONTRIBUTING.md), the [architecture](docs/architecture.md) and [build guide](docs/building.md). Use [GitHub Issues](https://github.com/RealAmethyst/BakuganBattleBrawlersRecomp/issues) as the authoritative tracker; do not add a competing Markdown backlog.
+- Understanding the game is a core deliverable for future contributors and mod support. Decompile, trace and document every screen, feature, mechanic and supporting system as work reaches it. Preserve verified ownership, state transitions, data/text consumers and input contracts in the [documentation records](docs/README.md); distinguish evidence, hypotheses and unresolved behavior.
+- Prefer hooks at verified semantic operations over repeated memory polling. Keep event capture separate from speech policy. Trace pointer chains through the actual consumer, validate ownership and lifetime, and fail closed. Never infer game facts from another project's addresses or behavior. Report every RE database annotation by address and name or comment.
 
-## Game understanding and future mod support
+## Publication boundary
 
-- Understanding the game is a core project deliverable alongside playability and accessibility. Systematically decompile, trace and document every screen, feature, gameplay mechanic and supporting system as work reaches it. Do not stop at finding enough offsets to make the immediate feature work.
-- Make the recovered knowledge useful to future contributors who want to understand the game or add mod support. Record verified function responsibilities, object relationships, state transitions, data and localization consumers, input handling and interactions with other systems in the established research records. Include executable identity and supporting code locations; distinguish direct evidence, hypotheses and unresolved behavior.
-- Prefer hooks at verified semantic operations and state changes over repeatedly reading memory to infer events. Where no separate event function exists, investigate instrumentation at the actual transition or mutation in the recompiled code. Reading event arguments or copying verified game-owned text remains necessary; bounded reads are not a substitute for understanding ownership and lifecycle. Document any remaining polling, why it is needed and the evidence boundary.
-- Keep recovered game behavior separate from speech policy so the same understanding can support future mods and other integrations. Use meaningful names grounded in evidence, preserve original behavior and avoid speculative interfaces or unrelated rewrites.
-- Maintain this knowledge incrementally with each milestone, including remaining gaps in the authoritative tracker. Keep raw decompilation and proprietary generated source private under the asset rules below; repository documentation should explain verified behavior without embedding those materials. This direction does not authorize publication, commits or pushes.
+- Do not download game assets. No game assets, game executables, raw decompilation, generated proprietary source, game shader caches, native game binaries or asset acquisition guidance in source, documentation, fixtures, CI artifacts or releases. Keep private inputs and outputs outside this tree.
+- Use original synthetic fixtures. Audit actual files and proposed history, not just ignore patterns. Retain third-party attribution and licenses; keep shared content impersonal and free of private paths or identifying logs.
+- Preserve working behavior and existing changes. Do not commit, push or rewrite history without an explicit request. Visibility and publication require owner authorization; do not infer it from ordinary development work.
 
-## Hard rule: no game assets or acquisition guidance
+## Accessibility and testing
 
-- Never include game assets in the repository, documentation, examples, test fixtures, CI artifacts or release packages. Never provide sources, links or instructions for obtaining game assets.
-- Do not download game assets. Privately supplied game inputs and reverse-engineering material must remain separate from publishable source and artifacts.
-- Keep game executables, extracted data, decompilation dumps and generated proprietary source out of version control. Review shader caches, embedded resources and generated build outputs for game content before any proposed publication; a generated file is not automatically suitable for redistribution.
-- Use original synthetic fixtures for public tests. Check tracked files and packaged contents; ignore patterns alone do not enforce the rule.
-
-## Engineering and accessibility
-
-- Verify game-specific claims against the actual target and record supporting evidence. Reference ports demonstrate techniques; their addresses, layouts and behavior do not establish facts about this game.
-- Keep generated translation, host runtime, rendering, game-specific integration and accessibility concerns modular. Prefer semantic game events and verified localized text sources for accessibility.
-- Accessibility must accompany each playable milestone, including setup, settings, errors and saving. User-facing accessibility behavior remains the project owner's decision.
-- Preserve required third-party attribution and verify licenses and contribution policies before reuse or upstream contributions. Keep shared content impersonal.
-- GitHub Issues is the authoritative tracker: `RealAmethyst/BakuganBattleBrawlersRecomp`, created private with Issues enabled on 2026-10-14 following explicit approval of name and visibility. Research is grouped under issue 1. Maintain that tracker; do not create a competing Markdown backlog. Public visibility, commits and pushes require their existing separate authorization.
-- The repository for the other Bakugan game is unrelated; do not reuse it. Executable identity and loader limits live in `research/executable-baseline.md`; import validation, candidate-runtime gaps and static caller evidence live in `research/runtime-imports.md`. First native compile/link evidence, codegen corrections and graphics/audio test gates live in `research/first-build-gates.md`. Diagnostic packaging and Prism decisions live in `research/diagnostic-launch.md`; the first audible launch failure and translator corrections live in `research/first-launch-failure.md`. Original clock/movie contracts, timing corrections and diagnostic measurement limits live in `research/timing-contracts.md`. The current Story character-creator blocker and next-session evidence boundaries live in `research/story-entry-freeze.md`.
-- Global permissions still apply: do not commit or push without a request, launch or control the game without explicit permission, or alter live screen-reader services without permission for that specific action.
-- Private diagnostic launch preparation and its verification boundaries live in `research/diagnostic-launch.md`. Speech uses Prism with standalone TTS backends disabled, including Speech Dispatcher and SAPI; a running screen reader receives speech, while absence of one remains silent. Launcher wording belongs in central localization resources.
+- Accessibility behavior belongs to the project owner. Ask about unresolved design; do not guess. Use actual localized game text, with only verified artwork-only captions allowed in central project resources.
+- Prism uses screen-reader backends only, with standalone TTS disabled. Absence of a screen reader remains silent. Do not reconfigure, stop, replace or restart live accessibility services without explicit permission for that specific action.
+- Build and verify offline. Do not launch, close or control the game without an explicit request. Do not treat automated checks as listening or gameplay confirmation. Use isolated runtime/configuration/display/bus resources for accessibility tests.
+- Communicate with short paragraphs and real Markdown headings for distinct sections. Give testing instructions directly in chat; do not add communication-only status or question files.

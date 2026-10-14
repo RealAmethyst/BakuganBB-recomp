@@ -76,4 +76,8 @@ The same headers credit: Tom Clay, 2026 — Adapted for ReXGlue runtime.
 
 The evaluation changes were prepared with Codex assistance. Original authorship and copyright notices above refer to the upstream source, not authorship of these changes.
 
-The new `include/rex/ui/modal_gamepad_input.h` is original local integration code with an explicit BSD-3-Clause SPDX identifier; it does not inherit a claim of authorship from the upstream notices.
+The following new headers are original local integration code, covered by the project's [BSD-3-Clause license](../../LICENSE). They do not inherit a claim of authorship from the upstream notices.
+
+- `include/rex/ui/keyboard_dialog.h`
+- `include/rex/ui/message_box_dialog.h`
+- `include/rex/ui/modal_gamepad_input.h` (also carries an explicit BSD-3-Clause SPDX identifier)
