@@ -21,6 +21,7 @@ These records preserve the investigation sequence. Dated earlier conclusions may
 - [Spatial accessibility audio and private cue preparation](accessibility-audio.md).
 - [Battle field, card ownership and camera capture](battle-field.md).
 - [Battle selections and prebattle opponent speech](battle-speech.md).
+- [In-game settings redesign](settings.md).
 - [Localization, menus, popups and logo events](localization-consumers.md).
 - [Pinned SDK patches](../patches/rexglue/README.md) and [Prism speech-library patch](../patches/prism/README.md).
 

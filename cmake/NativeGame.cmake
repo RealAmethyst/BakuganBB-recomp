@@ -110,12 +110,19 @@ add_library(brawlers_recompiled OBJECT ${GENERATED_SOURCES})
 add_executable(battle-brawlers
     "${PROJECT_SOURCE_DIR}/src/runtime/native_host.cpp"
     "${PROJECT_SOURCE_DIR}/src/runtime/native_ui.cpp"
+    "${PROJECT_SOURCE_DIR}/src/runtime/settings_runtime.cpp"
     "${PROJECT_SOURCE_DIR}/src/game/native_timing.cpp"
     "${PROJECT_SOURCE_DIR}/src/game/native_dialogs.cpp"
     "${PROJECT_SOURCE_DIR}/src/game/native_game_ui.cpp"
     "${PROJECT_SOURCE_DIR}/src/game/native_battle_speech.cpp"
     "${PROJECT_SOURCE_DIR}/src/game/native_versus_speech.cpp"
+    "${PROJECT_SOURCE_DIR}/src/game/native_settings.cpp"
+    "${PROJECT_SOURCE_DIR}/src/game/native_settings_save.cpp"
+    "${PROJECT_SOURCE_DIR}/src/game/native_settings_render.cpp"
     "${PROJECT_SOURCE_DIR}/src/core/game_speech_queue.cpp"
+    "${PROJECT_SOURCE_DIR}/src/core/settings_menu.cpp"
+    "${PROJECT_SOURCE_DIR}/src/core/settings_catalog.cpp"
+    "${PROJECT_SOURCE_DIR}/src/core/settings_events.cpp"
     "${_sdk}/src/ui/rex_app.cpp"
     "${_sdk}/src/ui/windowed_app_main_sdl.cpp")
 

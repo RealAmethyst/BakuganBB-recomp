@@ -18,7 +18,7 @@ def parse_event(payload):
             return None
         if event.get("source") not in {
                 "message", "menu", "title", "logo", "popup", "save", "creator", "status",
-                "battle_selection", "battle_versus"}:
+                "battle_selection", "battle_versus", "settings", "settings_confirmation"}:
             return None
         for key in ("id", "position", "total"):
             if type(event.get(key)) is not int or event[key] < 0:
@@ -88,7 +88,7 @@ class ScreenSpeech:
                 event[field] = artwork.get(key, "")
         if event["source"] in {
                 "menu", "title", "popup", "save", "creator", "status", "battle_selection",
-                "battle_versus"}:
+                "battle_versus", "settings", "settings_confirmation"}:
             glyphs = self.messages.get("game_glyphs", {})
             for field in ("title", "body", "section", "label", "value", "description"):
                 event[field] = prepare_text(event[field], glyphs)
@@ -151,7 +151,7 @@ class ScreenSpeech:
             self.hints(state)
             return
         parts = [label, value, description]
-        popup = event["source"] in {"message", "popup"}
+        popup = event["source"] in {"message", "popup", "settings_confirmation"}
         if event["total"] and not (popup and event["total"] == 1):
             parts.append(self.messages["screen_position"].format(
                 position=event["position"], total=event["total"]))

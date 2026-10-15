@@ -14,6 +14,8 @@
 #include "native_game_ui.h"
 #include "native_battle_speech.h"
 #include "native_versus_speech.h"
+#include "native_settings.h"
+#include "settings_runtime.h"
 #ifdef BRAWLERS_SPATIAL_AUDIO
 #include "accessibility_audio.h"
 #include "native_gate_audio.h"
@@ -57,6 +59,7 @@ class BattleBrawlersHost final : public rex::ReXApp {
 
   void OnConfigurePaths(rex::PathConfig& paths) override {
     paths.config_path = paths.user_data_root / "battle_brawlers.toml";
+    settings_path_ = paths.config_path;
   }
 
   void OnPreSetup(rex::RuntimeConfig& config) override {
@@ -84,6 +87,7 @@ class BattleBrawlersHost final : public rex::ReXApp {
   }
 
   bool ConstructRuntime(const rex::PathConfig& paths) override {
+    settings_path_ = paths.config_path;
     Report("runtime");
     bool result = rex::ReXApp::ConstructRuntime(paths);
     if (!result)
@@ -98,6 +102,7 @@ class BattleBrawlersHost final : public rex::ReXApp {
 
   void OnPostLoadXexImage() override {
     auto* memory = runtime()->memory();
+    SetNativeSettings(memory, &settings_);
     const auto reader = [memory](uint32_t address, void* output, size_t size) {
       return memory && memory->TryReadVirtual(address, output, size);
     };
@@ -130,8 +135,8 @@ class BattleBrawlersHost final : public rex::ReXApp {
     Report("image_loaded");
   }
   void OnPostSetup() override {
-#ifdef BRAWLERS_SPATIAL_AUDIO
     const auto installation = rex::filesystem::GetExecutableFolder().parent_path();
+#ifdef BRAWLERS_SPATIAL_AUDIO
     if (!brawlers::audio::InitializeAccessibilityAudio(installation)) {
       Report("spatial_audio_unavailable");
     } else {
@@ -139,8 +144,31 @@ class BattleBrawlersHost final : public rex::ReXApp {
           brawlers::game::GateAudioActivation::NativeCardRendering);
     }
 #endif
+    auto* graphics = runtime()->graphics_system();
+    std::string error;
+    if (!settings_.Configure(runtime(), &app_context(), window(),
+        graphics ? graphics->presenter() : nullptr, settings_path_, installation, &error)) {
+      std::fprintf(stderr, "Settings initialization: %s\n", error.c_str());
+      Report("settings_unavailable");
+    }
+  }
+  void DrainSettings() {
+    settings_.Shutdown();
+    while (const auto event = settings_.Poll()) {
+      if (event->kind == brawlers::settings::HostEventKind::SaveFailed)
+        Report("settings_save_failed_on_exit");
+      else if (event->kind == brawlers::settings::HostEventKind::ApplyFailed)
+        Report("settings_apply_failed_on_exit");
+    }
+  }
+  bool OnWindowCloseRequested() override {
+    // ReXApp's normal window-close path hard-exits without OnShutdown.
+    // Finish accepted config writes before allowing that existing path.
+    DrainSettings();
+    return true;
   }
   void OnShutdown() override {
+    DrainSettings();
 #ifdef BRAWLERS_SPATIAL_AUDIO
     brawlers::game::ConfigureGateAudioCapture(brawlers::game::GateAudioActivation::Disabled);
     brawlers::audio::ShutdownAccessibilityAudio();
@@ -154,6 +182,9 @@ class BattleBrawlersHost final : public rex::ReXApp {
 #endif
     Report("guest_exited");
   }
+
+  std::filesystem::path settings_path_;
+  brawlers::settings::HostSettingsRuntime settings_;
 };
 
 }  // namespace

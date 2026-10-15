@@ -7,6 +7,7 @@
 
 #include <rex/chrono/clock.h>
 #include <rex/ppc/context.h>
+#include "native_settings.h"
 
 extern "C" void __imp__sub_823AFA68(PPCContext& ctx, uint8_t* base);
 extern "C" void __imp__sub_82190990(PPCContext& ctx, uint8_t* base);
@@ -123,6 +124,7 @@ extern "C" void sub_821908D0(PPCContext& ctx, uint8_t* base) {
 extern "C" void sub_8212E0C8(PPCContext& ctx, uint8_t* base) {
   RecordUpdate(ctx.f1.f64);
   __imp__sub_8212E0C8(ctx, base);
+  UpdateHostSettings(ctx, base);
 }
 
 extern "C" void sub_8249D668(PPCContext& ctx, uint8_t* base) {

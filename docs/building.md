@@ -148,6 +148,22 @@ Bubblewrap must support unprivileged namespaces. The runner isolates the tests f
 
 The default checks cover the shared core, speech policy and launcher. SDK-dependent fixtures remain separate; see [integration.md](integration.md). Passing code checks does not establish graphics, speech or gameplay usability.
 
+The settings adapters have additional isolated synthetic checks. Use the patched
+SDK and its dependency checkout; each output directory must be new:
+
+```sh
+python3 tests/runtime/settings_runtime_regressions.py "$WORK/rexglue" \
+  "$WORK/rexglue/thirdparty" "$WORK/settings-runtime-checks"
+python3 tests/runtime/native_settings_render_regressions.py "$WORK/rexglue" \
+  "$WORK/rexglue/thirdparty/simde" "$WORK/settings-render-checks"
+python3 tests/runtime/native_settings_guards.py "$WORK/settings-guard-checks"
+python3 tests/runtime/native_settings_lifecycle.py "$WORK/rexglue" \
+  "$WORK/rexglue/thirdparty/simde" "$WORK/settings-lifecycle-checks"
+```
+
+These fixtures use synthetic window, audio and guest-memory boundaries. They do
+not open a game window, load audio output or connect to accessibility services.
+
 ## Verification so far
 
 On 2026-10-14, the normal SDK generator, runtime and Vulkan plugin built from the complete public patch series. Fresh game generation retained the verified functions and hooks, and the public CMake target compiled and linked successfully. Prism also built from its published patch. The staged installation passed the check-only preflight without loading Prism or launching the game.

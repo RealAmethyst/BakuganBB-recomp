@@ -1,0 +1,422 @@
+diff --git a/include/rex/cvar.h b/include/rex/cvar.h
+--- a/include/rex/cvar.h
++++ b/include/rex/cvar.h
+@@ -124,6 +124,37 @@
+ void ApplyEnvironment();
+ void FinalizeInit();
+ bool IsFinalized();
++// A requested disk value, independent of the current runtime value. Values
++// must name registered non-command flags and pass their type and constraints.
++// Floating-point values must be finite.
++struct ConfigSaveValue {
++  std::string name;
++  std::string value;
++};
++
++struct ConfigSaveResult {
++  bool saved = false;
++  std::string error;
++};
++
++// Persist only the supplied values; unrelated TOML keys are retained. Defaults
++// erase all flat/nested aliases understood by LoadConfig. No setters, callbacks,
++// source priorities or restart markers are changed. The all-flags overload
++// snapshots registered values under the registry lock, then releases it for I/O.
++// Success means the snapshot was written, synced, closed and atomically replaced
++// the destination; it does not mean a runtime setting was accepted/applied. On
++// failure before replacement the original file is unchanged. Rejects symlinks,
++// nonregular files, invalid TOML and unrepresentable values. Comments/formatting
++// are not retained. Requires an existing parent directory and exclusive ownership
++// against external writers; callers serialize value changes and save requests.
++// Do not call from a cvar change callback. File data is synced before replacement;
++// directory-entry durability across power loss is not guaranteed.
++ConfigSaveResult SaveConfigChecked(const std::filesystem::path& config_path,
++                                   const std::vector<ConfigSaveValue>& values);
++ConfigSaveResult SaveConfigChecked(const std::filesystem::path& config_path);
++
++// Compatibility wrapper: logs checked-save failures; use the checked operation
++// when the caller must acknowledge persistence.
+ void SaveConfig(const std::filesystem::path& config_path);
+ 
+ //=============================================================================
+diff --git a/src/core/cvar.cpp b/src/core/cvar.cpp
+--- a/src/core/cvar.cpp
++++ b/src/core/cvar.cpp
+@@ -10,11 +10,20 @@
+ #include <atomic>
+ #include <cctype>
+ #include <charconv>
++#include <climits>
++#include <cmath>
++#include <cerrno>
++#include <cstdio>
+ #include <filesystem>
+ #include <fstream>
+ #include <mutex>
+ #include <optional>
+ #include <string_view>
++#include <sstream>
++#include <stdexcept>
++#include <system_error>
++#include <type_traits>
++#include <unordered_set>
+ #include <unordered_map>
+ 
+ #include <CLI/CLI.hpp>
+@@ -24,6 +33,14 @@
+ #include <rex/platform/env.h>
+ 
+ #include <toml++/toml.hpp>
++
++#if REX_PLATFORM_WIN32
++#include <windows.h>
++#else
++#include <fcntl.h>
++#include <sys/stat.h>
++#include <unistd.h>
++#endif
+ 
+ namespace rex::cvar {
+ 
+@@ -690,24 +707,325 @@
+   return g_finalized;
+ }
+ 
++namespace {
++
++struct ConfigSnapshot {
++  std::vector<std::string> names;
++  toml::table overrides;
++};
++
++std::mutex& GetConfigSaveMutex() {
++  static std::mutex mutex;
++  return mutex;
++}
++
++template <typename T>
++void InsertConfigInteger(toml::table& table, const std::string& name, std::string_view text) {
++  T value{};
++  auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
++  if (error != std::errc() || end != text.data() + text.size()) {
++    throw std::runtime_error("Invalid integer for configuration flag: " + name);
++  }
++  if constexpr (std::is_unsigned_v<T>) {
++    if (value > uint64_t(INT64_MAX)) {
++      throw std::runtime_error("Configuration integer exceeds TOML range: " + name);
++    }
++  }
++  table.insert(name, int64_t(value));
++}
++
++toml::table ConfigValue(const FlagEntry& entry, std::string_view text) {
++  toml::table value;
++  switch (entry.type) {
++    case FlagType::Boolean:
++      if (text != "true" && text != "false") {
++        throw std::runtime_error("Invalid boolean for configuration flag: " + entry.name);
++      }
++      value.insert(entry.name, text == "true");
++      break;
++    case FlagType::Int32:
++      InsertConfigInteger<int32_t>(value, entry.name, text);
++      break;
++    case FlagType::Int64:
++      InsertConfigInteger<int64_t>(value, entry.name, text);
++      break;
++    case FlagType::Uint32:
++      InsertConfigInteger<uint32_t>(value, entry.name, text);
++      break;
++    case FlagType::Uint64:
++      InsertConfigInteger<uint64_t>(value, entry.name, text);
++      break;
++    case FlagType::Double: {
++      double number;
++      auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), number);
++      if (error != std::errc() || end != text.data() + text.size() || !std::isfinite(number)) {
++        throw std::runtime_error("Invalid number for configuration flag: " + entry.name);
++      }
++      value.insert(entry.name, number);
++      break;
++    }
++    case FlagType::String:
++      value.insert(entry.name, text);
++      break;
++    case FlagType::Command:
++      throw std::runtime_error("Cannot persist a command: " + entry.name);
++  }
++  return value;
++}
++
++// No setters or change callbacks: this also accepts values pending a restart.
++ConfigSnapshot SnapshotConfig(const std::vector<ConfigSaveValue>* requested) {
++  std::lock_guard lock(GetRegistryMutex());
++  ConfigSnapshot snapshot;
++  auto add = [&](const FlagEntry& entry, const std::string& text) {
++    if (!ValidateConstraints(entry, text)) {
++      throw std::runtime_error("Invalid value for configuration flag: " + entry.name);
++    }
++    auto value = ConfigValue(entry, text);
++    auto defaults = ConfigValue(entry, entry.default_value);
++    snapshot.names.push_back(entry.name);
++    if (value != defaults) {
++      snapshot.overrides.insert_or_assign(entry.name, *value.get(entry.name));
++    } else {
++      snapshot.overrides.erase(entry.name);
++    }
++  };
++  if (requested) {
++    std::unordered_set<std::string> seen;
++    for (const auto& value : *requested) {
++      auto it = GetRegistryIndex().find(value.name);
++      if (it == GetRegistryIndex().end()) {
++        throw std::runtime_error("Unknown configuration flag: " + value.name);
++      }
++      if (!seen.insert(value.name).second) {
++        throw std::runtime_error("Duplicate configuration flag: " + value.name);
++      }
++      add(GetRegistryStorage()[it->second], value.value);
++    }
++  } else {
++    for (const auto& entry : GetRegistryStorage()) {
++      if (entry.type != FlagType::Command) {
++        add(entry, entry.getter());
++      }
++    }
++  }
++  return snapshot;
++}
++
++// Match ApplyTomlTable's flattening, including alternative underscore splits.
++void EraseConfigAliases(toml::table& table, const std::string& prefix,
++                        const std::unordered_set<std::string>& names) {
++  for (auto it = table.begin(); it != table.end();) {
++    std::string name =
++        prefix.empty() ? std::string(it->first) : prefix + "_" + std::string(it->first);
++    if (auto* child = it->second.as_table()) {
++      EraseConfigAliases(*child, name, names);
++      ++it;
++    } else if (names.contains(name)) {
++      it = table.erase(it);
++    } else {
++      ++it;
++    }
++  }
++}
++
++// Own only an exclusively-created sibling; never truncate the destination.
++class ConfigTemporaryFile {
++ public:
++  explicit ConfigTemporaryFile(const std::filesystem::path& destination) {
++    static std::atomic<uint64_t> sequence{0};
++    for (size_t attempt = 0; attempt < 100; ++attempt) {
++      path_ = destination;
++#if REX_PLATFORM_WIN32
++      path_ += ".tmp." + std::to_string(GetCurrentProcessId()) + "." +
++               std::to_string(sequence.fetch_add(1));
++      handle_ = CreateFileW(path_.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
++                            FILE_ATTRIBUTE_NORMAL, nullptr);
++      if (handle_ != INVALID_HANDLE_VALUE) {
++        return;
++      }
++      if (GetLastError() != ERROR_FILE_EXISTS && GetLastError() != ERROR_ALREADY_EXISTS) {
++        throw std::system_error(GetLastError(), std::system_category(), "Create config temporary");
++      }
++#else
++      path_ += ".tmp." + std::to_string(getpid()) + "." + std::to_string(sequence.fetch_add(1));
++      fd_ = open(path_.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
++      if (fd_ >= 0) {
++        return;
++      }
++      if (errno != EEXIST) {
++        throw std::system_error(errno, std::generic_category(), "Create config temporary");
++      }
++#endif
++    }
++    throw std::runtime_error("Cannot create a unique configuration temporary file");
++  }
++
++  ConfigTemporaryFile(const ConfigTemporaryFile&) = delete;
++  ConfigTemporaryFile& operator=(const ConfigTemporaryFile&) = delete;
++
++  ~ConfigTemporaryFile() {
++#if REX_PLATFORM_WIN32
++    if (handle_ != INVALID_HANDLE_VALUE) {
++      CloseHandle(handle_);
++    }
++#else
++    if (fd_ >= 0) {
++      close(fd_);
++    }
++#endif
++    if (!path_.empty()) {
++      std::error_code ignored;
++      std::filesystem::remove(path_, ignored);
++    }
++  }
++
++  void WriteAndClose(std::string_view content, std::filesystem::perms permissions) {
++#if REX_PLATFORM_WIN32
++    (void)permissions;
++    while (!content.empty()) {
++      DWORD written = 0;
++      DWORD count = DWORD(std::min(content.size(), size_t(MAXDWORD)));
++      if (!WriteFile(handle_, content.data(), count, &written, nullptr)) {
++        throw std::system_error(GetLastError(), std::system_category(), "Write config temporary");
++      }
++      if (!written) {
++        throw std::runtime_error("No progress writing configuration temporary");
++      }
++      content.remove_prefix(written);
++    }
++    if (!FlushFileBuffers(handle_)) {
++      throw std::system_error(GetLastError(), std::system_category(), "Flush config temporary");
++    }
++    HANDLE handle = std::exchange(handle_, INVALID_HANDLE_VALUE);
++    if (!CloseHandle(handle)) {
++      throw std::system_error(GetLastError(), std::system_category(), "Close config temporary");
++    }
++#else
++    if (permissions != std::filesystem::perms::unknown &&
++        fchmod(fd_, mode_t(permissions) & 0777) != 0) {
++      throw std::system_error(errno, std::generic_category(), "Set config permissions");
++    }
++    while (!content.empty()) {
++      ssize_t written = write(fd_, content.data(), std::min(content.size(), size_t(SSIZE_MAX)));
++      if (written < 0) {
++        if (errno == EINTR) {
++          continue;
++        }
++        throw std::system_error(errno, std::generic_category(), "Write config temporary");
++      }
++      if (!written) {
++        throw std::runtime_error("No progress writing configuration temporary");
++      }
++      content.remove_prefix(size_t(written));
++    }
++    if (fsync(fd_) != 0) {
++      throw std::system_error(errno, std::generic_category(), "Flush config temporary");
++    }
++    int fd = std::exchange(fd_, -1);
++    if (close(fd) != 0) {
++      throw std::system_error(errno, std::generic_category(), "Close config temporary");
++    }
++#endif
++  }
++
++  void Replace(const std::filesystem::path& destination) {
++#if REX_PLATFORM_WIN32
++    if (!MoveFileExW(path_.c_str(), destination.c_str(),
++                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
++      throw std::system_error(GetLastError(), std::system_category(), "Replace configuration");
++    }
++#else
++    if (rename(path_.c_str(), destination.c_str()) != 0) {
++      throw std::system_error(errno, std::generic_category(), "Replace configuration");
++    }
++#endif
++    path_.clear();
++  }
++
++ private:
++  std::filesystem::path path_;
++#if REX_PLATFORM_WIN32
++  HANDLE handle_ = INVALID_HANDLE_VALUE;
++#else
++  int fd_ = -1;
++#endif
++};
++
++ConfigSaveResult SaveConfigSnapshot(const std::filesystem::path& path,
++                                    const ConfigSnapshot& snapshot) {
++  // Registry snapshots are completed before this lock; never acquire the
++  // registry mutex while doing file I/O. Serializes in-process read/merge/write.
++  std::lock_guard lock(GetConfigSaveMutex());
++  std::error_code error;
++  auto status = std::filesystem::symlink_status(path, error);
++  if (error && error != std::errc::no_such_file_or_directory) {
++    throw std::system_error(error, "Inspect configuration destination");
++  }
++  bool exists = std::filesystem::exists(status);
++  if (exists && !std::filesystem::is_regular_file(status)) {
++    throw std::runtime_error("Configuration destination must be a regular file");
++  }
++  toml::table config;
++  if (exists) {
++    std::ifstream input(path, std::ios::binary);
++    if (!input) {
++      throw std::runtime_error("Cannot open existing configuration");
++    }
++    input.exceptions(std::ios::badbit);
++    config = toml::parse(input);
++  }
++  for (const auto& name : snapshot.names) {
++    if (config[name].is_table() && snapshot.overrides.contains(name)) {
++      throw std::runtime_error("Configuration flag collides with an existing table: " + name);
++    }
++  }
++  EraseConfigAliases(config, "", {snapshot.names.begin(), snapshot.names.end()});
++  for (const auto& [key, value] : snapshot.overrides) {
++    config.insert_or_assign(key, value);
++  }
++  std::ostringstream stream;
++  stream.exceptions(std::ios::badbit | std::ios::failbit);
++  stream << "# Auto-generated cvar configuration\n" << config << '\n';
++  std::string content = stream.str();
++  // Validate the complete serialization before creating any temporary file.
++  // This also rejects malformed UTF-8 in string values.
++  if (toml::parse(content) != config) {
++    throw std::runtime_error("Configuration values cannot be represented losslessly in TOML");
++  }
++  ConfigTemporaryFile temporary(path);
++  temporary.WriteAndClose(content, exists ? status.permissions() : std::filesystem::perms::unknown);
++  temporary.Replace(path);
++  return {true, {}};
++}
++
++ConfigSaveResult SaveConfigCheckedImpl(const std::filesystem::path& path,
++                                       const std::vector<ConfigSaveValue>* values) {
++  try {
++    auto snapshot = SnapshotConfig(values);
++    return SaveConfigSnapshot(path, snapshot);
++  } catch (const std::exception& error) {
++    return {false, error.what()};
++  }
++}
++
++}  // namespace
++
++ConfigSaveResult SaveConfigChecked(const std::filesystem::path& config_path,
++                                   const std::vector<ConfigSaveValue>& values) {
++  return SaveConfigCheckedImpl(config_path, &values);
++}
++
++ConfigSaveResult SaveConfigChecked(const std::filesystem::path& config_path) {
++  return SaveConfigCheckedImpl(config_path, nullptr);
++}
++
+ void SaveConfig(const std::filesystem::path& config_path) {
+-  std::string content = SerializeToTOML();
+-  if (content.empty()) {
+-    REXLOG_DEBUG("SaveConfig: no modified flags to save");
+-    return;
+-  }
+-
+-  try {
+-    std::ofstream file(config_path);
+-    if (!file) {
+-      REXLOG_ERROR("SaveConfig: failed to open {}", config_path.string());
+-      return;
+-    }
+-    file << "# Auto-generated cvar configuration\n";
+-    file << content;
++  auto result = SaveConfigChecked(config_path);
++  if (result.saved) {
+     REXLOG_INFO("Saved config to {}", config_path.string());
+-  } catch (const std::exception& e) {
+-    REXLOG_ERROR("SaveConfig: {}", e.what());
++  } else {
++    REXLOG_ERROR("SaveConfig: {}", result.error);
+   }
+ }
+ 

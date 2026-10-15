@@ -1,5 +1,13 @@
 # Pinned baseline instruction events. See docs/localization-consumers.md.
 # No instruction is replaced, skipped or permitted to mutate CPU registers.
+# The Options layout hook below updates only owned widget output transforms,
+# after native animation. Other hooks remain observation-only.
+
+[[midasm_hook]]
+address = 0x823C65F4
+name = "NativeSettingsRowTransform"
+registers = ["r31"]
+after_instruction = false
 
 # Battle selection lifetime and actual common-hint text consumer.
 [[midasm_hook]]

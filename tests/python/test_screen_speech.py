@@ -119,6 +119,31 @@ class ScreenTests(unittest.TestCase):
         reader = ScreenSpeech({"screen_position": "{position} of {total}"}, None)
         reader.handle(event("opened", title="Title", label="Row", position=1, total=1))
 
+    def test_settings_child_return_and_reset_preserve_parent_lifetime(self):
+        opening = event("opened", source="settings", title="Synthetic options",
+                        label="Synthetic category", position=1, total=5, hints=["Navigate"])
+        self.assertEqual(parse_event(json.dumps(opening)), opening)
+        self.reader.handle(opening)
+        self.send("resumed", source="settings", section="Synthetic category",
+                  label="Synthetic volume", value="20%", description="Synthetic detail",
+                  position=1, total=2)
+        question = event("opened", source="settings_confirmation", body="Reset category?",
+                         label="Cancel", position=2, total=2)
+        self.assertEqual(parse_event(json.dumps(question)), question)
+        self.reader.handle(question)
+        self.send("closed", source="settings_confirmation")
+        self.send("resumed", source="settings", section="Synthetic category",
+                  label="Reset", position=2, total=2)
+        self.assertEqual(self.calls, [
+            ("Synthetic options", True), ("Synthetic category, 1 of 5", False),
+            ("Navigate", False), ("Synthetic category", True),
+            ("Synthetic volume, 20%, Synthetic detail, 1 of 2", False),
+            ("Reset category?", True), ("Cancel, 2 of 2", False),
+            ("Synthetic category", True), ("Reset, 2 of 2", False)])
+        self.send("closed", source="settings")
+        self.send("focused", source="settings", label="Stale", position=1, total=1)
+        self.assertNotIn(("Stale, 1 of 1", True), self.calls)
+
     def test_late_hints_queue_once_after_delayed_item(self):
         self.send("opened", title="Title")
         self.send("focused", label="Choice", position=1, total=2)

@@ -1,0 +1,674 @@
+diff --git a/include/rex/ui/display_settings.h b/include/rex/ui/display_settings.h
+new file mode 100644
+--- /dev/null
++++ b/include/rex/ui/display_settings.h
+@@ -0,0 +1,47 @@
++#pragma once
++
++#include <cstdint>
++#include <string>
++
++namespace rex::ui {
++
++// Acceptance is separate from application. An accepted asynchronous request
++// may remain pending or be constrained by the window system. No persistence is
++// performed by the display APIs.
++struct DisplayChangeResult {
++  bool accepted = false;
++  bool applied = false;
++  std::string error;
++};
++
++struct WindowDisplayState {
++  bool available = false;
++  bool fullscreen = false;
++  bool requested_fullscreen = false;
++  bool fullscreen_pending = false;
++  // Last checked fullscreen request error, including legacy SetFullscreen.
++  std::string fullscreen_error;
++  // Event-confirmed client size in the Window abstraction's logical units.
++  // Zero means unavailable. This is neither guest nor internal draw resolution.
++  uint32_t logical_width = 0;
++  uint32_t logical_height = 0;
++  uint32_t requested_logical_width = 0;
++  uint32_t requested_logical_height = 0;
++  bool size_pending = false;
++  std::string error;
++};
++
++enum class HostPresentMode { kUnknown, kImmediate, kMailbox, kFifoRelaxed, kFifo };
++
++struct HostPresentationState {
++  bool supported = false;
++  bool requested_vsync = false;
++  bool has_applied_preference = false;
++  bool applied_vsync_preference = false;
++  bool pending = false;
++  // A false preference may still select FIFO if other modes are unavailable.
++  HostPresentMode actual_mode = HostPresentMode::kUnknown;
++  std::string error;
++};
++
++}  // namespace rex::ui
+diff --git a/include/rex/ui/flags.h b/include/rex/ui/flags.h
+--- a/include/rex/ui/flags.h
++++ b/include/rex/ui/flags.h
+@@ -26,6 +26,9 @@
+ REXCVAR_DECLARE(bool, present_dither);
+ REXCVAR_DECLARE(bool, present_allow_overscan_cutoff);
+ REXCVAR_DECLARE(bool, host_present_from_non_ui_thread);
++REXCVAR_DECLARE(bool, host_vsync);
++REXCVAR_DECLARE(int32_t, host_window_width);
++REXCVAR_DECLARE(int32_t, host_window_height);
+ REXCVAR_DECLARE(int32_t, window_width);
+ REXCVAR_DECLARE(int32_t, window_height);
+ REXCVAR_DECLARE(bool, fullscreen);
+diff --git a/include/rex/ui/presenter.h b/include/rex/ui/presenter.h
+--- a/include/rex/ui/presenter.h
++++ b/include/rex/ui/presenter.h
+@@ -30,6 +30,7 @@
+ #include <rex/math.h>
+ #include <rex/platform.h>
+ #include <rex/types.h>
++#include <rex/ui/display_settings.h>
+ #include <rex/ui/flags.h>
+ #include <rex/ui/surface.h>
+ #include <rex/ui/ui_drawer.h>
+@@ -335,6 +336,14 @@
+   void OnSurfaceMonitorUpdateFromUIThread(bool old_monitor_potentially_disconnected);
+   void OnSurfaceResizeFromUIThread();
+ 
++  // UI-thread-only. Request may be called by a drawer; the next paint event
++  // performs reconnection after taking ownership from the guest output thread.
++  // True requests FIFO; false retains the backend's existing mode priorities.
++  // Neither request changes guest timing, render scale, or persisted config.
++  DisplayChangeResult RequestHostVSyncFromUIThread(bool enabled);
++  HostPresentationState GetHostPresentationStateFromUIThread() const;
++  bool CanChangeSurfaceFromUIThread() const { return !is_in_ui_thread_paint_; }
++
+   // For calling from the platform paint event handler. Refreshes the surface
+   // connection if needed, and also paints if possible and if needed (if there
+   // are no UI overlays, and the guest output is presented directly from the
+@@ -623,6 +632,14 @@
+   // Must be called by the implementation's initialization, before the presenter
+   // is used for anything.
+   bool InitializeCommonSurfaceIndependent();
++
++  virtual bool SupportsHostVSync() const { return false; }
++  bool IsHostVSyncRequestedFromUIThread() const {
++    return host_presentation_state_.requested_vsync;
++  }
++  void OnHostPresentModeFromUIThread(HostPresentMode mode) {
++    host_presentation_state_.actual_mode = mode;
++  }
+ 
+   // ConnectOrReconnect and Disconnect are callable only by the UI thread and
+   // only when it has access to painting (PaintMode is not
+@@ -787,6 +804,9 @@
+         : drawer(drawer), last_draw(last_draw) {}
+   };
+ 
++  void ApplyPendingHostVSyncFromUIThread();
++  HostPresentationState host_presentation_state_;
++
+   void SetPaintModeFromUIThread(PaintMode new_mode);
+   // Based on conditions like whether UI needs to be drawn and whether vertical
+   // sync is implicit - see the implementation for the requirements.
+diff --git a/include/rex/ui/vulkan/presenter.h b/include/rex/ui/vulkan/presenter.h
+--- a/include/rex/ui/vulkan/presenter.h
++++ b/include/rex/ui/vulkan/presenter.h
+@@ -67,6 +67,8 @@
+   // images inside the presenter, different versions may be given even every
+   // invocation), to avoid recreation of dependent objects every frame.
+   static constexpr size_t kMaxActiveGuestOutputImageVersions = kGuestOutputMailboxSize;
++
++  bool SupportsHostVSync() const override { return true; }
+ 
+   static constexpr VkFormat kGuestOutputFormat = VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+   // The guest output is expected to be acquired and released in this state by
+@@ -351,9 +353,10 @@
+     // be destroyed externally no matter what the result is.
+     static VkSwapchainKHR CreateSwapchainForVulkanSurface(
+         const VulkanDevice* vulkan_device, VkSurfaceKHR surface, uint32_t width, uint32_t height,
++        bool require_vsync,
+         VkSwapchainKHR old_swapchain, uint32_t& present_queue_family_out,
+         VkFormat& image_format_out, VkExtent2D& image_extent_out, bool& is_fifo_out,
+-        bool& ui_surface_unusable_out);
++        VkPresentModeKHR& present_mode_out, bool& ui_surface_unusable_out);
+ 
+     // Destroys the swapchain and its derivatives, nulls `swapchain` and returns
+     // the original swapchain object, if it existed, for use as oldSwapchain if
+@@ -414,6 +417,7 @@
+     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+     VkExtent2D swapchain_extent = {};
+     bool swapchain_is_fifo = false;
++    VkPresentModeKHR swapchain_present_mode = VK_PRESENT_MODE_FIFO_KHR;
+     std::vector<VkImage> swapchain_images;
+     std::vector<SwapchainFramebuffer> swapchain_framebuffers;
+   };
+diff --git a/include/rex/ui/window.h b/include/rex/ui/window.h
+--- a/include/rex/ui/window.h
++++ b/include/rex/ui/window.h
+@@ -18,6 +18,7 @@
+ #include <utility>
+ 
+ #include <rex/platform.h>
++#include <rex/ui/display_settings.h>
+ #include <rex/ui/menu_item.h>
+ #include <rex/ui/modal_gamepad_input.h>
+ #include <rex/ui/presenter.h>
+@@ -277,6 +278,25 @@
+   bool IsFullscreen() const { return fullscreen_; }
+   void SetFullscreen(bool new_fullscreen);
+ 
++  // UI-thread-only checked operations. Call outside paint/drawer callbacks.
++  // Fullscreen is desktop borderless. Size never restores or exits fullscreen;
++  // a host may save a size for later and apply it after confirmed fullscreen exit.
++  // Query returns event-confirmed state, not SDL's possibly pending flags.
++  virtual WindowDisplayState GetDisplayStateFromUIThread() const {
++    WindowDisplayState state;
++    state.error = "Checked window display state is unsupported";
++    return state;
++  }
++  virtual DisplayChangeResult RequestFullscreenFromUIThread(bool fullscreen) {
++    (void)fullscreen;
++    return {false, false, "Checked fullscreen changes are unsupported"};
++  }
++  virtual DisplayChangeResult RequestWindowSizeFromUIThread(uint32_t width, uint32_t height) {
++    (void)width;
++    (void)height;
++    return {false, false, "Checked window size changes are unsupported"};
++  }
++
+   // Desired state stored by the common Window, externally modifiable, read-only
+   // in the implementation.
+   const std::string& GetTitle() const { return title_; }
+@@ -344,15 +364,6 @@
+   // May be applied in a delayed way or dropped at all, HasFocus will not
+   // necessarily be true immediately.
+   void Focus();
+-
+-  // TODO(Triang3l): A resize function, primarily for snapping externally to
+-  // 1280x720, 1920x1080, and other 1:1 resolutions. It will need to resize the
+-  // window (to a desired logical size - the actual physical size is entirely
+-  // the feedback of the implementation) in the normal state, and possibly also
+-  // un-maximize (and possibly un-fullscreen) it (but this choice will possibly
+-  // need to be exposed to the caller). Because it's currently not needed, it's
+-  // not implemented to avoid platform-specific complexities regarding
+-  // maximization, DPI, etc.
+ 
+   void SetPresenter(Presenter* presenter);
+ 
+@@ -586,6 +597,7 @@
+   void OnMonitorUpdate(MonitorUpdateEvent& e);
+   // For calling when the platform changes something in the non-maximized,
+   // non-fullscreen size of the window.
++  void OnFullscreenUpdate(bool fullscreen) { fullscreen_ = fullscreen; }
+   void OnDesiredLogicalSizeUpdate(uint32_t new_desired_logical_width,
+                                   uint32_t new_desired_logical_height) {
+     desired_logical_width_ = new_desired_logical_width;
+diff --git a/include/rex/ui/window_sdl.h b/include/rex/ui/window_sdl.h
+--- a/include/rex/ui/window_sdl.h
++++ b/include/rex/ui/window_sdl.h
+@@ -30,6 +30,10 @@
+   WindowSDL(WindowedAppContext& app_context, const std::string_view title,
+             uint32_t desired_logical_width, uint32_t desired_logical_height);
+   ~WindowSDL() override;
++
++  WindowDisplayState GetDisplayStateFromUIThread() const override;
++  DisplayChangeResult RequestFullscreenFromUIThread(bool fullscreen) override;
++  DisplayChangeResult RequestWindowSizeFromUIThread(uint32_t width, uint32_t height) override;
+ 
+   void* GetNativeWindowHandle() const override;
+   bool SetRelativeMouseMode(bool enable) override;
+@@ -79,6 +83,9 @@
+   // expect. Never zero.
+   float GetPixelDensity() const;
+ 
++  void RecordDisplaySize(int width, int height);
++  void RecordDisplayEvent(const SDL_Event& event);
++  WindowDisplayState display_state_;
+   SDL_Window* sdl_window_ = nullptr;
+   SDL_WindowID sdl_window_id_ = 0;
+   std::atomic<bool> paint_pending_{false};
+diff --git a/src/ui/presenter.cpp b/src/ui/presenter.cpp
+--- a/src/ui/presenter.cpp
++++ b/src/ui/presenter.cpp
+@@ -25,6 +25,10 @@
+ #include <ffx_api/ffx_api.h>
+ #include <ffx_api/ffx_upscale.h>
+ #endif
++
++// Startup preference; live changes use RequestHostVSyncFromUIThread.
++REXCVAR_DEFINE_BOOL(host_vsync, false, "UI/Presenter", "Host presentation VSync preference")
++    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+ 
+ REXCVAR_DEFINE_BOOL(host_present_from_non_ui_thread, true, "UI/Presenter",
+                     "Allow presentation from non-UI thread");
+@@ -415,7 +419,50 @@
+   }
+ }
+ 
++HostPresentationState Presenter::GetHostPresentationStateFromUIThread() const {
++  if (!window_ || !window_->app_context().IsInUIThread()) {
++    HostPresentationState state;
++    state.error = "Host presentation state requires an attached window and the UI thread";
++    return state;
++  }
++  auto state = host_presentation_state_;
++  state.supported = SupportsHostVSync();
++  return state;
++}
++
++DisplayChangeResult Presenter::RequestHostVSyncFromUIThread(bool enabled) {
++  if (!window_ || !window_->app_context().IsInUIThread()) {
++    return {false, false, "Host VSync requests require an attached window and the UI thread"};
++  }
++  auto state = GetHostPresentationStateFromUIThread();
++  if (!state.supported) {
++    return {false, false, "Host VSync is not supported by this presenter"};
++  }
++  if (state.has_applied_preference && !state.pending && state.applied_vsync_preference == enabled) {
++    host_presentation_state_.requested_vsync = enabled;
++    return {true, true, {}};
++  }
++  host_presentation_state_.requested_vsync = enabled;
++  host_presentation_state_.pending = true;
++  host_presentation_state_.error.clear();
++  if (surface_) {
++    RequestPaintOrConnectionRecoveryViaWindow(true);
++  }
++  // Painting consumes this request later, never while a UI drawer is running.
++  // No queued callback retains a raw Presenter or Window pointer.
++  return {true, false, {}};
++}
++
++void Presenter::ApplyPendingHostVSyncFromUIThread() {
++  assert_false(is_executing_ui_drawers_);
++  assert_false(is_in_ui_thread_paint_);
++  if (host_presentation_state_.pending && surface_) {
++    OnSurfaceResizeFromUIThread();
++  }
++}
++
+ void Presenter::PaintFromUIThread(bool force_paint) {
++  ApplyPendingHostVSyncFromUIThread();
+   // If there is no surface, this will be a no-op, nothing outdated, nothing to
+   // paint. However, an explicit monitor check is needed because UI framerate
+   // limiting may be tied to signals from the OS for the monitor - but painting
+@@ -786,6 +833,7 @@
+ }
+ 
+ bool Presenter::InitializeCommonSurfaceIndependent() {
++  host_presentation_state_.requested_vsync = REXCVAR_GET(host_vsync);
+   {
+     std::lock_guard<std::mutex> config_lock(guest_output_paint_config_mutex_);
+     guest_output_paint_config_ = BuildGuestOutputPaintConfigFromCVar();
+@@ -1333,6 +1381,8 @@
+   if (IsConnectedSurfacePaintConnectionState(surface_paint_connection_state_)) {
+     DisconnectPaintingFromSurfaceFromUIThreadImpl();
+   }
++  host_presentation_state_.has_applied_preference = false;
++  host_presentation_state_.actual_mode = HostPresentMode::kUnknown;
+   surface_paint_connection_state_ = new_state;
+   surface_paint_connection_has_implicit_vsync_ = false;
+   surface_width_in_paint_connection_ = 0;
+@@ -1380,6 +1430,13 @@
+           // Fallthrough to common success handling.
+         case SurfacePaintConnectResult::kSuccessUnchanged:
+           // Don't know yet what the first result was (success or suboptimal).
++          if (SupportsHostVSync()) {
++            host_presentation_state_.has_applied_preference = true;
++            host_presentation_state_.applied_vsync_preference =
++                host_presentation_state_.requested_vsync;
++            host_presentation_state_.pending = false;
++            host_presentation_state_.error.clear();
++          }
+           surface_paint_connection_was_optimal_at_successful_paint_ = false;
+           surface_paint_connection_state_ = SurfacePaintConnectionState::kConnectedPaintable;
+           surface_paint_connection_has_implicit_vsync_ = is_vsync_implicit;
+@@ -1390,10 +1447,18 @@
+           }
+           break;
+         case SurfacePaintConnectResult::kFailure:
++          host_presentation_state_.has_applied_preference = false;
++          host_presentation_state_.actual_mode = HostPresentMode::kUnknown;
++          host_presentation_state_.pending = false;
++          host_presentation_state_.error = "Host presentation connection failed";
+           surface_paint_connection_state_ =
+               SurfacePaintConnectionState::kUnconnectedRetryAtStateChange;
+           break;
+         case SurfacePaintConnectResult::kFailureSurfaceUnusable:
++          host_presentation_state_.has_applied_preference = false;
++          host_presentation_state_.actual_mode = HostPresentMode::kUnknown;
++          host_presentation_state_.pending = false;
++          host_presentation_state_.error = "Host presentation surface is unusable";
+           surface_paint_connection_state_ =
+               SurfacePaintConnectionState::kUnconnectedSurfaceReportedUnusable;
+           break;
+diff --git a/src/ui/vulkan/vulkan_presenter.cpp b/src/ui/vulkan/vulkan_presenter.cpp
+--- a/src/ui/vulkan/vulkan_presenter.cpp
++++ b/src/ui/vulkan/vulkan_presenter.cpp
+@@ -831,8 +831,10 @@
+     bool surface_unusable;
+     paint_context_.swapchain = PaintContext::CreateSwapchainForVulkanSurface(
+         vulkan_device_, paint_context_.vulkan_surface, new_surface_width, new_surface_height,
++        IsHostVSyncRequestedFromUIThread(),
+         old_swapchain, paint_context_.present_queue_family, new_swapchain_format,
+-        paint_context_.swapchain_extent, paint_context_.swapchain_is_fifo, surface_unusable);
++        paint_context_.swapchain_extent, paint_context_.swapchain_is_fifo,
++        paint_context_.swapchain_present_mode, surface_unusable);
+     // Destroy the old swapchain that may be retired now.
+     if (old_swapchain != VK_NULL_HANDLE) {
+       dfn.vkDestroySwapchainKHR(device, old_swapchain, nullptr);
+@@ -935,8 +937,10 @@
+     bool surface_unusable;
+     paint_context_.swapchain = PaintContext::CreateSwapchainForVulkanSurface(
+         vulkan_device_, paint_context_.vulkan_surface, new_surface_width, new_surface_height,
++        IsHostVSyncRequestedFromUIThread(),
+         VK_NULL_HANDLE, paint_context_.present_queue_family, new_swapchain_format,
+-        paint_context_.swapchain_extent, paint_context_.swapchain_is_fifo, surface_unusable);
++        paint_context_.swapchain_extent, paint_context_.swapchain_is_fifo,
++        paint_context_.swapchain_present_mode, surface_unusable);
+     if (paint_context_.swapchain == VK_NULL_HANDLE) {
+       // Failed to create the swapchain for the new Vulkan surface - destroy the
+       // Vulkan surface.
+@@ -1099,6 +1103,20 @@
+     paint_context_.swapchain_framebuffers.emplace_back(image_view, framebuffer);
+   }
+ 
++  switch (paint_context_.swapchain_present_mode) {
++    case VK_PRESENT_MODE_IMMEDIATE_KHR:
++      OnHostPresentModeFromUIThread(HostPresentMode::kImmediate);
++      break;
++    case VK_PRESENT_MODE_MAILBOX_KHR:
++      OnHostPresentModeFromUIThread(HostPresentMode::kMailbox);
++      break;
++    case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
++      OnHostPresentModeFromUIThread(HostPresentMode::kFifoRelaxed);
++      break;
++    default:
++      OnHostPresentModeFromUIThread(HostPresentMode::kFifo);
++      break;
++  }
+   is_vsync_implicit_out = paint_context_.swapchain_is_fifo;
+   return SurfacePaintConnectResult::kSuccess;
+ }
+@@ -1171,8 +1189,9 @@
+ 
+ VkSwapchainKHR VulkanPresenter::PaintContext::CreateSwapchainForVulkanSurface(
+     const VulkanDevice* vulkan_device, VkSurfaceKHR surface, uint32_t width, uint32_t height,
+-    VkSwapchainKHR old_swapchain, uint32_t& present_queue_family_out, VkFormat& image_format_out,
+-    VkExtent2D& image_extent_out, bool& is_fifo_out, bool& ui_surface_unusable_out) {
++    bool require_vsync, VkSwapchainKHR old_swapchain, uint32_t& present_queue_family_out, VkFormat& image_format_out,
++    VkExtent2D& image_extent_out, bool& is_fifo_out, VkPresentModeKHR& present_mode_out,
++    bool& ui_surface_unusable_out) {
+   ui_surface_unusable_out = false;
+ 
+   const VulkanInstance::Functions& ifn = vulkan_device->vulkan_instance()->functions();
+@@ -1444,7 +1463,10 @@
+   // interfering with GPU command processing, and also to allow tearing so
+   // variable refresh rate may be used where it's available.
+   // Note: If the priorities here are changes, update the cvar descriptions.
+-  if (REXCVAR_GET(vulkan_allow_present_mode_immediate) &&
++  if (require_vsync) {
++    // FIFO is guaranteed by Vulkan; this controls host presentation only.
++    swapchain_create_info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
++  } else if (REXCVAR_GET(vulkan_allow_present_mode_immediate) &&
+       std::find(present_modes.cbegin(), present_modes.cend(), VK_PRESENT_MODE_IMMEDIATE_KHR) !=
+           present_modes.cend()) {
+     // Allowing tearing to reduce latency, and possibly variable refresh rate
+@@ -1480,6 +1502,7 @@
+       uint32_t(swapchain_create_info.imageFormat), uint32_t(swapchain_create_info.imageColorSpace),
+       uint32_t(swapchain_create_info.presentMode));
+ 
++  present_mode_out = swapchain_create_info.presentMode;
+   present_queue_family_out = queue_family_index_present;
+   image_format_out = swapchain_create_info.imageFormat;
+   image_extent_out = swapchain_create_info.imageExtent;
+diff --git a/src/ui/window.cpp b/src/ui/window.cpp
+--- a/src/ui/window.cpp
++++ b/src/ui/window.cpp
+@@ -20,6 +20,15 @@
+ #include <rex/ui/window.h>
+ 
+ #include <imgui.h>
++
++// Host-only startup dimensions. Live application uses the checked Window API.
++// Unlike window_width/height, these never participate in guest video mode queries.
++REXCVAR_DEFINE_INT32(host_window_width, 0, "UI/Window", "Host startup width in logical pixels")
++    .range(0, 8192)
++    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
++REXCVAR_DEFINE_INT32(host_window_height, 0, "UI/Window", "Host startup height in logical pixels")
++    .range(0, 8192)
++    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+ 
+ REXCVAR_DEFINE_INT32(window_width, 0, "UI/Window",
+                      "Startup window width in logical pixels (0 = use app default)")
+diff --git a/src/ui/window_sdl.cpp b/src/ui/window_sdl.cpp
+--- a/src/ui/window_sdl.cpp
++++ b/src/ui/window_sdl.cpp
+@@ -11,6 +11,8 @@
+  * @remarks     Derived from Xenia's window_win.cc (Ben Vanik, 2020).
+  */
+ 
++#include <climits>
++
+ #include <rex/ui/window_sdl.h>
+ 
+ #include <algorithm>
+@@ -45,6 +47,9 @@
+ namespace {
+ 
+ uint32_t ResolveWindowWidth(uint32_t requested_width) {
++  if (REXCVAR_GET(host_window_width) > 0) {
++    return uint32_t(std::clamp(REXCVAR_GET(host_window_width), 1, 8192));
++  }
+   if (REXCVAR_GET(window_width) > 0) {
+     return uint32_t(REXCVAR_GET(window_width));
+   }
+@@ -63,6 +68,9 @@
+ }
+ 
+ uint32_t ResolveWindowHeight(uint32_t requested_height) {
++  if (REXCVAR_GET(host_window_height) > 0) {
++    return uint32_t(std::clamp(REXCVAR_GET(host_window_height), 1, 8192));
++  }
+   if (REXCVAR_GET(window_height) > 0) {
+     return uint32_t(REXCVAR_GET(window_height));
+   }
+@@ -149,6 +157,13 @@
+     REXLOG_ERROR("SDL_CreateWindow failed: {}", SDL_GetError());
+     return false;
+   }
++  display_state_ = {};
++  display_state_.requested_logical_width = GetDesiredLogicalWidth();
++  display_state_.requested_logical_height = GetDesiredLogicalHeight();
++  int created_width = 0, created_height = 0;
++  if (SDL_GetWindowSize(sdl_window_, &created_width, &created_height)) {
++    RecordDisplaySize(created_width, created_height);
++  }
+   sdl_window_id_ = SDL_GetWindowID(sdl_window_);
+   sdl_app_context().RegisterWindow(sdl_window_id_, this);
+ 
+@@ -172,7 +187,13 @@
+ 
+   if (IsFullscreen()) {
+     // Borderless desktop fullscreen (a NULL display mode is SDL3's default).
+-    SDL_SetWindowFullscreen(sdl_window_, true);
++    if (SDL_SetWindowFullscreen(sdl_window_, true)) {
++      display_state_.requested_fullscreen = true;
++      display_state_.fullscreen_pending = true;
++    } else {
++      REXLOG_WARN("Initial fullscreen request failed: {}", SDL_GetError());
++      OnFullscreenUpdate(false);
++    }
+   }
+ #if REX_PLATFORM_MAC
+   CFPreferencesSetAppValue(CFSTR("ApplePressAndHoldEnabled"), kCFBooleanFalse,
+@@ -216,6 +237,7 @@
+ }
+ 
+ void WindowSDL::DestroySDLWindow() {
++  display_state_ = {};
+   if (cursor_hide_timer_) {
+     SDL_RemoveTimer(cursor_hide_timer_);
+     cursor_hide_timer_ = 0;
+@@ -291,11 +313,145 @@
+   return uint32_t(scale * float(GetMediumDpi()) + 0.5f);
+ }
+ 
++WindowDisplayState WindowSDL::GetDisplayStateFromUIThread() const {
++  if (!app_context().IsInUIThread()) {
++    WindowDisplayState state;
++    state.error = "Window display state requires the UI thread";
++    return state;
++  }
++  if (phase() != Phase::kOpen || !sdl_window_) {
++    WindowDisplayState state;
++    state.error = "Window is not open";
++    return state;
++  }
++  auto state = display_state_;
++  state.available = true;
++  return state;
++}
++
++DisplayChangeResult WindowSDL::RequestFullscreenFromUIThread(bool fullscreen) {
++  auto state = GetDisplayStateFromUIThread();
++  if (!state.available) {
++    return {false, false, state.error};
++  }
++  const auto reject = [&](std::string error) {
++    display_state_.fullscreen_error = error;
++    return DisplayChangeResult{false, false, std::move(error)};
++  };
++  if (presenter() && !presenter()->CanChangeSurfaceFromUIThread()) {
++    return reject("Defer window changes until painting has finished");
++  }
++  display_state_.fullscreen_error.clear();
++  if (!state.fullscreen_pending && state.fullscreen == fullscreen) {
++    OnFullscreenUpdate(fullscreen);
++    display_state_.requested_fullscreen = fullscreen;
++    return {true, true, {}};
++  }
++  WindowDestructionReceiver destruction_receiver(this);
++  // Explicitly retain desktop borderless mode; never switch a monitor mode.
++  if (fullscreen && !SDL_SetWindowFullscreenMode(sdl_window_, nullptr)) {
++    return reject(SDL_GetError());
++  }
++  if (destruction_receiver.IsWindowDestroyedOrClosed()) {
++    return {false, false, "Window closed during fullscreen request"};
++  }
++  if (!SDL_SetWindowFullscreen(sdl_window_, fullscreen)) {
++    return reject(SDL_GetError());
++  }
++  if (destruction_receiver.IsWindowDestroyedOrClosed()) {
++    return {true, false, "Window closed during fullscreen request"};
++  }
++  OnFullscreenUpdate(fullscreen);
++  display_state_.requested_fullscreen = fullscreen;
++  display_state_.fullscreen_pending = true;
++  // SDL_GetWindowFlags includes pending_flags, so it is not confirmation.
++  return {true, false, {}};
++}
++
++DisplayChangeResult WindowSDL::RequestWindowSizeFromUIThread(uint32_t width, uint32_t height) {
++  auto state = GetDisplayStateFromUIThread();
++  if (!state.available) {
++    return {false, false, state.error};
++  }
++  if (presenter() && !presenter()->CanChangeSurfaceFromUIThread()) {
++    return {false, false, "Defer window changes until painting has finished"};
++  }
++  if (!width || !height || width > 8192 || height > 8192) {
++    return {false, false, "Window size must be between 1 and 8192 logical pixels per axis"};
++  }
++  if (state.fullscreen || state.fullscreen_pending ||
++      (SDL_GetWindowFlags(sdl_window_) &
++       (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_MINIMIZED))) {
++    return {false, false, "Window size can only be applied to a restored window"};
++  }
++  if (!state.size_pending && state.logical_width == width && state.logical_height == height) {
++    OnDesiredLogicalSizeUpdate(width, height);
++    display_state_.requested_logical_width = width;
++    display_state_.requested_logical_height = height;
++    return {true, true, {}};
++  }
++#if REX_PLATFORM_MAC
++  uint32_t native_width = width, native_height = height;
++#else
++  uint32_t native_width = SizeToPhysical(width), native_height = SizeToPhysical(height);
++#endif
++  if (!native_width || !native_height || native_width > uint32_t(INT_MAX) ||
++      native_height > uint32_t(INT_MAX)) {
++    return {false, false, "Window size is not representable at the current DPI"};
++  }
++  WindowDestructionReceiver destruction_receiver(this);
++  if (!SDL_SetWindowSize(sdl_window_, int(native_width), int(native_height))) {
++    return {false, false, SDL_GetError()};
++  }
++  if (destruction_receiver.IsWindowDestroyedOrClosed()) {
++    return {true, false, "Window closed during resize request"};
++  }
++  OnDesiredLogicalSizeUpdate(width, height);
++  display_state_.requested_logical_width = width;
++  display_state_.requested_logical_height = height;
++  display_state_.size_pending = true;
++  return {true, false, {}};
++}
++
++void WindowSDL::RecordDisplaySize(int width, int height) {
++  if (width <= 0 || height <= 0) {
++    return;
++  }
++#if REX_PLATFORM_MAC
++  display_state_.logical_width = uint32_t(width);
++  display_state_.logical_height = uint32_t(height);
++#else
++  display_state_.logical_width = SizeToLogical(uint32_t(width));
++  display_state_.logical_height = SizeToLogical(uint32_t(height));
++#endif
++  if (display_state_.logical_width == display_state_.requested_logical_width &&
++      display_state_.logical_height == display_state_.requested_logical_height) {
++    display_state_.size_pending = false;
++  }
++}
++
++void WindowSDL::RecordDisplayEvent(const SDL_Event& event) {
++  if (event.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN ||
++      event.type == SDL_EVENT_WINDOW_LEAVE_FULLSCREEN) {
++    display_state_.fullscreen = event.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN;
++    if (display_state_.fullscreen == display_state_.requested_fullscreen) {
++      display_state_.fullscreen_pending = false;
++    }
++  } else if (event.type == SDL_EVENT_WINDOW_RESIZED) {
++    RecordDisplaySize(event.window.data1, event.window.data2);
++  }
++}
++
+ void WindowSDL::ApplyNewFullscreen() {
+-  if (!sdl_window_) {
+-    return;
+-  }
+-  SDL_SetWindowFullscreen(sdl_window_, IsFullscreen());
++  WindowDestructionReceiver destruction_receiver(this);
++  auto result = RequestFullscreenFromUIThread(IsFullscreen());
++  if (destruction_receiver.IsWindowDestroyedOrClosed()) {
++    return;
++  }
++  if (!result.accepted) {
++    REXLOG_WARN("Fullscreen request failed: {}", result.error);
++    OnFullscreenUpdate(display_state_.fullscreen);
++  }
+ }
+ 
+ void WindowSDL::ApplyNewTitle() {
+@@ -440,6 +596,7 @@
+ }
+ 
+ void WindowSDL::HandleWindowEvent(SDL_Event& event) {
++  RecordDisplayEvent(event);
+   WindowDestructionReceiver destruction_receiver(this);
+   switch (event.type) {
+     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
