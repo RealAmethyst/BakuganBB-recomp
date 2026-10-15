@@ -16,6 +16,8 @@ All rights reserved.
 - `src/core/clock_posix.cpp`
 - `src/core/threading_posix.cpp`
 - `src/ui/rex_app.cpp`
+- `include/rex/ui/window_sdl.h` (also credits derivation from Xenia's window_win.cc, Ben Vanik, 2020)
+- `src/ui/window_sdl.cpp` (also credits derivation from Xenia's window_win.cc, Ben Vanik, 2020)
 - `tests/unit/codegen/output_stamp_test.cpp`
 - `tests/unit/core/chrono_test.cpp`
 
@@ -30,11 +32,15 @@ The same headers credit: Tom Clay, 2026 — Adapted for ReXGlue runtime.
 - `include/rex/ui/imgui_dialog.h`
 - `include/rex/ui/imgui_drawer.h`
 - `include/rex/ui/window.h`
+- `include/rex/ui/presenter.h`
+- `include/rex/ui/vulkan/presenter.h`
 - `src/graphics/vulkan/command_processor.cpp`
 - `src/kernel/xboxkrnl/xboxkrnl_rtl.cpp`
 - `src/kernel/xam/xam_ui.cpp`
 - `src/ui/imgui_dialog.cpp`
 - `src/ui/imgui_drawer.cpp`
+- `src/ui/window.cpp`
+- `src/ui/presenter.cpp`
 - `src/ui/vulkan/vulkan_presenter.cpp`
 
 ## Affected source group 3
@@ -71,6 +77,14 @@ The same headers credit: Tom Clay, 2026 — Adapted for ReXGlue runtime.
 - `src/system/xmemory.cpp`
 - `include/rex/input/sdl/sdl_input_driver.h`
 - `src/input/sdl/sdl_input_driver.cpp`
+- `include/rex/ui/flags.h`
+
+## Affected source group 7
+
+Copyright (c) 2026 Tom Clay
+
+- `include/rex/cvar.h`
+- `src/core/cvar.cpp`
 
 ## Local changes
 
@@ -81,3 +95,4 @@ The following new headers are original local integration code, covered by the pr
 - `include/rex/ui/keyboard_dialog.h`
 - `include/rex/ui/message_box_dialog.h`
 - `include/rex/ui/modal_gamepad_input.h` (also carries an explicit BSD-3-Clause SPDX identifier)
+- `include/rex/ui/display_settings.h`

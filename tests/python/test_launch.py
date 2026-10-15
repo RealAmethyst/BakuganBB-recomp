@@ -116,6 +116,20 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual((code, events), (1, ["process_failed"]))
         self.assertIn("SDL failed", log)
 
+    def test_settings_failures_are_localized_and_spoken(self):
+        for key in ("settings_unavailable", "settings_save_failed_on_exit",
+                    "settings_apply_failed_on_exit"):
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                speech = Speech()
+                messages = json.loads(MESSAGES.read_text(encoding="utf-8"))
+                reporter = launch.Reporter(messages, speech)
+                script = "print('BRAWLERS_STATUS:thread_created'); print(" + repr(launch.PREFIX + key) + ")"
+                with patch("sys.stdout", new_callable=io.StringIO):
+                    code = launch.supervise([sys.executable, "-c", script], root, root / "log", reporter)
+                self.assertEqual(code, 1)
+                self.assertIn((messages[key], False), speech.calls)
+
     def test_signal_exit_is_reported(self):
         code, events, log = self.run_fixture("import os, signal; os.kill(os.getpid(), signal.SIGTERM)")
         self.assertEqual((code, events), (1, ["process_failed"]))

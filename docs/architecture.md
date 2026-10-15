@@ -4,7 +4,7 @@
 
 `src/core` contains standard C++ memory/text validation, event values and the bounded speech queue. It does not depend on ReXGlue or generated game code. `src/core/accessibility` contains Python event validation, speech ordering, text preparation and the Prism adapter. These modules have no Linux launcher dependency; portability of the design is not proof of execution on every platform.
 
-`src/game` contains hooks whose meaning comes from verified game code. They preserve original execution and capture events or copy bounded game-owned text. `config/game_events.toml` is the pinned translation's hook configuration. Game-event ownership and exact source identities are documented in the [localization record](localization-consumers.md).
+`src/game` contains hooks whose meaning comes from verified game code. Observation hooks preserve original execution and copy bounded game-owned text. The [settings adapter](settings.md) also replaces the approved Options interaction and presentation through verified task, widget and save boundaries. `config/game_events.toml` distinguishes its owned row-transform hook from observation hooks. Game-event ownership and exact source identities are documented in the [localization record](localization-consumers.md).
 
 `src/runtime` binds the host to ReXGlue and transports runtime UI events. It depends on the patched SDK and, for the host, private generated image configuration. Runtime integration is separate from OS-specific process supervision; it is not classified as portable core merely because the SDK abstracts some platforms.
 
@@ -17,6 +17,21 @@ Repository layout describes responsibilities. The private installed application 
 `resources` contains central project wording and verified artwork-only transcriptions, not extracted game assets. Ordinary game captions are captured from the actual runtime text consumers. `tests` contains original synthetic fixtures; `patches/rexglue` retains SDK patches, provenance and their associated regression fixtures.
 
 Game inputs, generated translation, runtime data, caches and compiled game binaries remain external to the source tree. No game execution is registered with CTest.
+
+## Settings ownership
+
+The core category model has no native calls or persistence. It creates typed,
+generation-tagged commands; adapters accept the complete batch or reject it.
+Native option effects and save callbacks run on the guest update path, outside
+observer locks. Presentation retains native widgets, font drawing and animation.
+Copied settings events join the existing speech queue.
+
+The runtime settings owner dispatches window, presenter and cue changes to the
+UI thread. A worker saves immutable config snapshots through the checked SDK
+writer. Desired values, display completion and disk completion remain distinct.
+Closing Options does not destroy this owner; normal application close drains
+accepted writes before the SDK hard-exits. No settings path configures the
+screen reader or desktop accessibility services.
 
 ## Reference structures
 

@@ -1,7 +1,7 @@
 {
   "upstream": "https://github.com/rexglue/rexglue-sdk",
   "revision": "c94f5ebdcb3c9d1a460ca48e04f9758448f8d518",
-  "date": "2026-10-14",
+  "date": "2026-10-15",
   "status": "local evaluation patches, not adopted or submitted upstream",
   "sha256": {
     "chrono-range.patch": "84662d2756a16e0f6e7706203b477fb369aa99784aaabb593b6cbd2c1167bb85",
@@ -23,7 +23,7 @@
     "clock-test-support/rex/cvar.h": "c753aceb51d0cc530f98458f36ac617daced68803ba1abb926102afb2c277739",
     "clock-test-support/rex/logging.h": "69b65585993f1ac35312d0c96d576e3d804bacc032e09a7ef909fb8b023e216c",
     "idle-toast-repaint.patch": "3e3cd49b561b3a4a3aa864a53255330c54b8b386a9a9336e719111be5a24d190",
-    "NOTICE.md": "e91bfa510ded2a349c6a63983b6b3b0db3c6baef01094cb104ee239e36227587",
+    "NOTICE.md": "1eb9f025e03c96f44c0a3435b2a1e57833a9fd66fc6240eaf175e0f7a3dab60d",
     "keyboard-dialog.patch": "fcdbe5b43fe8dcad76cd55040dfaeb67da058b8f565811bdf64079da01ec921d",
     "keyboard-dialog-regressions.py": "8de3d279b38cda3d615a81a77e16b75b96abbc1a54f208367ef1c5c89edbf855",
     "message-box-observer.patch": "4cdfe01c2a306d442ed4b458cc2f4a9db584165a6c058401d2071c6569ff7e1e",
@@ -31,7 +31,11 @@
     "message-box-regressions.py": "1107a1afabcd7027d3e16327482854b584ecc86fd29fc887e98049702ccd315b",
     "safe-guest-read-regressions.py": "355d3ee2b001d98fe369067a8186edd4cc032f061c924f657d2a9ccdb11b916d",
     "popup-controller.patch": "e5ff7570e3652e9c8936fe8ad82745aa240f49e6f3811c0ce13d644e760bfdde",
-    "popup-controller-regressions.py": "2501c03f0e063fb10daf3ed05f97cb2be3e40bcf9ea81ad7c9ce2c2976dd19d5"
+    "popup-controller-regressions.py": "2501c03f0e063fb10daf3ed05f97cb2be3e40bcf9ea81ad7c9ce2c2976dd19d5",
+    "checked-config-save.patch": "a7972d51ffd0cd25d8f04da18f55c83d580983a4a577a5f96da94529f416a6be",
+    "checked-config-save-regressions.py": "11b98aca9b8ef7ef2e863601806a5891c4e62ff33c3750c7e6d1c6a8c4bf3aa0",
+    "settings-display.patch": "2d2eb7d6466905770064294b3fd215273e964639b5079ef18653d806da19dca4",
+    "settings-display-regressions.py": "370721140336ecdaa05612cb09c9222d23c4366e26fb2622581bf8a8c396c295"
   },
   "application_order": [
     "chrono-range.patch",
@@ -47,6 +51,8 @@
     "keyboard-dialog.patch",
     "message-box-observer.patch",
     "safe-guest-read.patch",
-    "popup-controller.patch"
+    "popup-controller.patch",
+    "checked-config-save.patch",
+    "settings-display.patch"
   ]
 }

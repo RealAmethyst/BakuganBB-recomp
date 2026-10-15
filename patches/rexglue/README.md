@@ -74,6 +74,88 @@ The public guarded-read fixture previously passed against its built runtime unde
 
 Four codegen inputs in that runtime build remained at the pinned baseline: `include/rex/codegen/function_graph.h`, `src/codegen/builders/context.cpp`, `src/codegen/builders/control_flow.cpp`, and `src/codegen/phase_gapfill.cpp`. That runtime build therefore does not establish integration of the codegen patches. Their separate candidate-object and generated-code evidence is described above; do not equate successful patch application with a complete codegen build.
 
+## Checked configuration saving
+
+[checked-config-save.patch](checked-config-save.patch) adds a checked persistence
+API for the [in-game settings redesign](../../docs/settings.md). It preserves
+the existing void `SaveConfig` entry point as a wrapper. New callers can save an
+explicit immutable list of registered name/value pairs, including values pending
+a restart, without changing the live registry, invoking setters or recording
+restart flags. Assignment, OS application and persistence are separate outcomes.
+
+The checked operation validates the complete batch, merges it with existing TOML,
+removes flat/nested aliases for selected defaults, and retains unrelated key
+values. The formatter escapes strings. Comments and formatting may normalize.
+Invalid input, invalid existing TOML, table collisions and nonregular destination
+files fail closed. The parent directory must already exist.
+
+An exclusively created sibling temporary file is written, synced and closed
+before atomic replacement. Failures before replacement leave the original file
+unchanged. Calls are serialized within the process; external writers require
+exclusive ownership. Do not call from a registry change callback or mistake a
+persisted snapshot for successful display application. Directory-entry durability
+across power loss is not guaranteed.
+
+[checked-config-save-regressions.py](checked-config-save-regressions.py) compiles
+the actual patched registry/parser/persistence translation unit and uses synthetic
+configuration, with logging/environment boundary stubs and injected filesystem
+failures. Run inside an isolated Linux environment:
+
+```sh
+python3 checked-config-save-regressions.py /path/to/patched-sdk /path/to/new-output
+```
+
+On 2026-10-15 this fixture passed under AddressSanitizer and UndefinedBehaviorSanitizer
+on Linux. It covers default-only and aliased resets, escaped strings, preservation
+of unrelated values, immutable pending values, invalid/command/nonfinite rejection,
+partial writes and write/sync/close/replace failures, temporary-file collisions and
+cleanup, interrupted writes, nonregular destinations and concurrent disjoint saves.
+An unpatched-source control reproduced the stale final-override defect. The full
+15-patch ordered series also passed the checksum/application check against the
+pinned clean SDK. These checks do not establish runtime UI integration.
+
+The fixture was initially compiled and run directly with logging/environment
+stubs and private scratch files. Its final binary then passed in Bubblewrap with
+private filesystem/runtime/configuration resources, no desktop buses, display,
+host home, network or audio devices. No live accessibility service was used.
+
+The existing loader and numeric getters use `std::to_string` for doubles, which
+limits decimal precision. File snapshot fidelity does not prove arbitrary
+floating-point runtime reload equality. Menu values must stay within their
+verified discrete ranges; changing loader precision is outside this patch.
+
+Callers must also coordinate pending restart values with the existing all-flags
+Save action, which otherwise snapshots current live values and can replace those
+pending choices. The new primitive does not provide a shared settings owner.
+
+The Windows implementation has not been compiled or run. This prerequisite does
+not implement the in-game menu, native save adapter, or automatic save scheduling.
+The in-game settings owner now connects this primitive; deployment and
+interactive acceptance are tracked in issue 33.
+
+## Host display settings
+
+[settings-display.patch](settings-display.patch) follows checked-config-save in
+the manifest. It adds checked UI-thread fullscreen/window-size requests and
+observable completion, plus deferred presentation VSync refresh. Host dimensions
+and presentation preferences are separate from guest video-mode and vblank flags.
+Fullscreen completion uses matching SDL events; rejected requests retain errors.
+Requests do not claim success merely because a configuration value was accepted.
+
+[settings-display-regressions.py](settings-display-regressions.py) applies the
+complete ordered series to a clean pinned SDK archive and exercises source-derived
+display boundaries with synthetic SDL/Vulkan state in an isolated environment:
+
+```sh
+python3 settings-display-regressions.py /path/to/clean-pinned-sdk /path/to/new-output
+```
+
+The Linux fixture passed ASan/UBSan, including asynchronous fullscreen matching,
+window constraints, UI ownership, present-mode selection and deferred refresh.
+The complete 16-patch SDK builds with the settings integration. Real window
+transitions, compositor behavior and in-game visual quality remain manual tests.
+Windows and macOS were not validated.
+
 ## Compatibility limits
 
 Additional original fixtures: [scalar-layout-regressions.cpp](scalar-layout-regressions.cpp) drives the actual baseline/candidate device code using synthetic Vulkan function pointers; [synthetic-xma.c](synthetic-xma.c) decodes generated silent XMA frames with the pinned FFmpeg archives. They contain no game input. Exact private build commands and limits are recorded in the diagnostic-launch evidence collections. The XMA fixture follows the decoder's own grammar and is not an independent codec-conformance test.

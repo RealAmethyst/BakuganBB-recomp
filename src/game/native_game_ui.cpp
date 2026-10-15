@@ -4,6 +4,7 @@
 #include "native_speech.h"
 #include "game_speech_queue.h"
 #include "native_localization.h"
+#include "native_settings_render.h"
 
 #include <cfenv>
 #include <cstdio>
@@ -920,6 +921,7 @@ extern "C" void sub_822DADA0(PPCContext& ctx, uint8_t* base) {
 }
 
 extern "C" void sub_821EA650(PPCContext& ctx, uint8_t* base) {
+  if (brawlers::settings::NativeSettingsRenderHints(ctx, base)) return;
   ScopedText scope(TextScope::MenuHints);
   __imp__sub_821EA650(ctx, base);
 }
@@ -931,6 +933,7 @@ extern "C" void sub_823B60B8(PPCContext& ctx, uint8_t* base) {
   const auto bank = ctx.r5.u8;
   const auto id = ctx.r4.u32;
   __imp__sub_823B60B8(ctx, base);
+  brawlers::settings::NativeSettingsRenderProvider(ctx, bank, id, caller);
   if (scope == TextScope::None || !owner || bank != 0 ||
       (caller != 0x823A9958 && caller != 0x823AA6C4))
     return;
@@ -1335,6 +1338,7 @@ extern "C" void sub_821E1790(PPCContext& ctx, uint8_t* base) {
 }
 
 extern "C" void sub_823A9528(PPCContext& ctx, uint8_t* base) {
+  if (brawlers::settings::NativeSettingsRenderText(ctx, base)) return;
   const auto pointer = ctx.r4.u32;
   if (text_owner && ((text_scope == TextScope::SaveName && ctx.lr == 0x822D61C8) ||
       (text_scope != TextScope::SaveName && ctx.lr == 0x823A9A24) ||
