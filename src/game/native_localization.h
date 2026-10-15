@@ -13,7 +13,8 @@ struct MenuTextResult {
   uint64_t address = 0;
 };
 
-// Event-time lookup for the verified plain-text attribute captions in bank zero.
+// Event-time lookup for verified plain-text captions in bank zero. Callers must
+// establish the exact resource ID through the feature's native text consumer.
 // 823B60B8 selects a descriptor; 8212ECF0 resolves its relative string offset.
 // Final entries are deliberately unsupported: no allocation extent is proven.
 inline MenuTextResult ReadMenuText(const GuestUiMemory& memory, uint32_t id) {

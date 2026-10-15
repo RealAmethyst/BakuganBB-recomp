@@ -66,6 +66,7 @@ namespace {
 using brawlers::ui::GuestUiMemory;
 GuestUiMemory memory({});
 rex::thread::global_critical_region state_region;
+GameTaskRemovedObserver task_removed_observer = nullptr;
 
 brawlers::ui::GameSpeechQueue& Output() {
   static brawlers::ui::GameSpeechQueue queue(SendScreenEvent, [](std::string_view reason) {
@@ -844,6 +845,20 @@ void SetGameSpeechReader(brawlers::ui::ReadBytes reader) {
 
 bool FlushGameSpeech() { return Output().Flush(); }
 
+bool QueueGameDiagnostic(std::string_view reason) noexcept {
+  return Output().EnqueueDiagnostic(reason);
+}
+
+bool QueueGameEvent(ScreenEvent&& event) noexcept {
+  return Output().Enqueue(std::move(event));
+}
+
+void FailGameCapture() noexcept { Output().FailCapture(); }
+
+void SetGameTaskRemovedObserver(GameTaskRemovedObserver observer) {
+  task_removed_observer = observer;
+}
+
 void BrawlersMainMenuStateChanged(PPCRegister& owner, PPCRegister& state) {
   Observe([&] { MainState(owner.u32, state.u32); });
 }
@@ -960,6 +975,7 @@ extern "C" void sub_823B87A8(PPCContext& ctx, uint8_t* base) {
     CloseCreator(owner);
     CloseAttribute(owner);
   });
+  if (task_removed_observer) task_removed_observer(owner);
 }
 
 extern "C" void sub_822CFDF8(PPCContext& ctx, uint8_t* base) {

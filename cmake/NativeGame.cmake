@@ -22,6 +22,7 @@ set(BRAWLERS_REXGLUE_SOURCE_DIR "" CACHE PATH "External ReXGlue source with all 
 set(BRAWLERS_REXGLUE_BUILD_DIR "" CACHE PATH "Matching external ReXGlue build directory with generated headers")
 set(BRAWLERS_REXGLUE_OUTPUT_DIR "" CACHE PATH "Matching external Release SDK library directory")
 set(BRAWLERS_GENERATED_DIR "" CACHE PATH "External generated translation directory containing sources.cmake")
+set(BRAWLERS_STEAM_AUDIO_SDK_DIR "" CACHE PATH "Optional external Steam Audio 4.8.1 SDK for spatial accessibility cues")
 
 foreach(_name IN ITEMS BRAWLERS_REXGLUE_SOURCE_DIR BRAWLERS_REXGLUE_BUILD_DIR
                        BRAWLERS_REXGLUE_OUTPUT_DIR BRAWLERS_GENERATED_DIR)
@@ -112,9 +113,26 @@ add_executable(battle-brawlers
     "${PROJECT_SOURCE_DIR}/src/game/native_timing.cpp"
     "${PROJECT_SOURCE_DIR}/src/game/native_dialogs.cpp"
     "${PROJECT_SOURCE_DIR}/src/game/native_game_ui.cpp"
+    "${PROJECT_SOURCE_DIR}/src/game/native_battle_speech.cpp"
+    "${PROJECT_SOURCE_DIR}/src/game/native_versus_speech.cpp"
     "${PROJECT_SOURCE_DIR}/src/core/game_speech_queue.cpp"
     "${_sdk}/src/ui/rex_app.cpp"
     "${_sdk}/src/ui/windowed_app_main_sdl.cpp")
+
+if(BRAWLERS_STEAM_AUDIO_SDK_DIR)
+    file(REAL_PATH "${BRAWLERS_STEAM_AUDIO_SDK_DIR}" _steam_audio)
+    cmake_path(IS_PREFIX _brawlers_source_root "${_steam_audio}" NORMALIZE _brawlers_in_tree)
+    if(_brawlers_in_tree OR NOT EXISTS "${_steam_audio}/include/phonon.h")
+        message(FATAL_ERROR "BRAWLERS_STEAM_AUDIO_SDK_DIR must contain external Steam Audio SDK headers")
+    endif()
+    target_sources(battle-brawlers PRIVATE
+        "${PROJECT_SOURCE_DIR}/src/game/native_gate_audio.cpp"
+        "${PROJECT_SOURCE_DIR}/src/core/spatial_audio.cpp"
+        "${PROJECT_SOURCE_DIR}/src/runtime/spatial_audio_runtime.cpp"
+        "${PROJECT_SOURCE_DIR}/src/runtime/accessibility_audio.cpp")
+    target_include_directories(battle-brawlers PRIVATE "${_steam_audio}/include")
+    target_compile_definitions(battle-brawlers PRIVATE BRAWLERS_SPATIAL_AUDIO=1)
+endif()
 
 foreach(_target IN ITEMS brawlers_recompiled battle-brawlers)
     set_target_properties(${_target} PROPERTIES

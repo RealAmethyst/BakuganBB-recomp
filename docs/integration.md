@@ -10,6 +10,8 @@ These original integration sources accompany a private statically recompiled bui
 - `native_ui.cpp`: installs optional runtime keyboard and message-box observers before runtime threads start and transports actual UI events to the launcher. Compile with the pinned SDK's existing nlohmann JSON include directory and both dialog patches.
 - `native_game_ui.cpp` and `game_events.toml`: observe verified menu/title/save-picker/popup and creator transitions, native text consumers and readable startup movie pictures at successful submission. Include the TOML in the pinned private codegen configuration; compile the adapter with its generated hook calls. Constructor/removal wrappers preserve native lifetime. [Localization research](localization-consumers.md) and [character creation](character-creation.md) record the original behavior and exact contracts.
 - `native_localization.h`: game-specific, event-time lookup of verified plain-text attribute captions. It validates the provider and resource structure and bounds each string by its following offset. It does not call guest code or scan for text.
+- `native_battle_speech.cpp` and `native_versus_speech.cpp`: selected cards/Bakugan and mode-two prebattle portrait identities, using verified native lifetimes and the same event queue. [Battle speech](battle-speech.md) records exact ownership, text consumers and scope limits.
+- `native_gate_audio.cpp`, `spatial_audio.cpp` and `spatial_audio_runtime.cpp`: verified camera/card snapshots, stable loop identities and the optional Steam Audio/SDL output. [Battle-field evidence](battle-field.md) and the [audio record](accessibility-audio.md) separate native facts, approved behavior and offline checks.
 - `guest_ui_memory.h` and `game_speech_queue.cpp`: strict bounded text copying and value-only FIFO output outside guest/runtime locks. Requires the guarded-read SDK patch. Mapping safety does not establish game-object ownership; semantic hooks supply that context.
 - `launch.py`: Linux process supervisor, explicit runtime paths, exclusive launch lock and private logs. It runs the game only through its main entrypoint, never when imported.
 - `keyboard_speech.py` and `screen_speech.py`: validate native events and apply speech ordering through the existing Prism owner. `speech_text.py` supplies shared text preparation. Entered text and captions are excluded from persistent launch logs.
@@ -35,3 +37,14 @@ The original `test_launch.py` and `test_prism_speech.py` fixtures exercise proce
 Creator and operation-status events use the same transport and central text preparation. Creator items support a native value, a verified selection flag rendered as centrally localized "Selected", and a centrally localized supplementary description. Appearance-preview loading is intentionally silent; it does not suspend item speech. Status events have body text only, with no invented title, choice or index. Delayed initial items and child returns preserve queue intent across events. `test_native_localization.cpp` uses made-up resource tables to check provider identity, descriptor traversal, overflow, Unicode, termination and copying bounds; it needs no game or SDK. `test_speech_text.py` checks glyph spacing and literal punctuation preservation.
 
 The [diagnostic-launch record](diagnostic-launch.md) owns build identities, verified evidence and remaining listening boundaries. Source and candidate changes were prepared with Codex assistance; no upstream contribution or publication is implied.
+
+Battle-capture fixtures `test_native_gate_audio.cpp`, `test_native_battle_speech.cpp`
+and `test_native_versus_speech.cpp` use SDK headers and synthetic guest functions,
+without linking or executing the game. The optional
+`test_spatial_audio_runtime.cpp` fixture exercises the actual Steam Audio library
+with generated signals and aborting SDL stubs. Its header documents the external
+inputs and isolated standalone compile/run contract. It includes the runtime
+implementation directly to exercise internal buffering and a deterministic
+concurrency regression; do not also compile that implementation or link SDL
+into the fixture. The ordinary source-only runner continues to require neither
+SDK nor Steam Audio.

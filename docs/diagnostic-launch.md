@@ -8,9 +8,57 @@ Prepare a private, user-controlled diagnostic launch. The native executable rema
 
 The accessibility designer selected automatic startup/failure speech through Prism, with standalone text-to-speech backends disabled. Speech targets a running screen reader; absence of one should be silent. In particular, direct Speech Dispatcher and SAPI output are excluded. Diagnostic wording lives in `resources/messages.en.json`. Later game-content narration is recorded below separately from the initial milestone.
 
+## Battle accessibility test build
+
+Current private build: `diagnostic-20261015.1`, with `diagnostic-20261014.9`
+backed up. It adds the approved slower gate-card loops through Steam Audio,
+following camera position/facing while the field is visible and stopping on
+the verified native pause path. Gate-card selection speaks localized names,
+effects and positions; Bakugan selection speaks names and available-item
+positions. The verified mode-two match entrance announces its portrait names.
+The [battle speech](battle-speech.md), [field capture](battle-field.md) and
+[audio](accessibility-audio.md) records own the exact contracts and limits.
+
+Native builds with and without Steam Audio compile and link without warnings.
+Four SDK-free C++ fixtures and 73 Python tests pass. Isolated ASan/UBSan
+fixtures cover existing speech, card/camera capture, both field selectors,
+match-entrance lifetimes and the actual Steam Audio renderer using synthetic
+signals with no device calls. The existing native speech fixture passes 356
+original forwarding calls and 1,770 bounded reads. Independent reviews checked
+the capture/lifetime contracts; unsupported Bakugan row counts now fail closed.
+
+Installed host SHA-256:
+`ec1da565d00e686b9905dcbdec8d482e3654ffb5f4d164d4670e132ad3452774`.
+Static ELF inspection verifies six host SDL imports and no host SDL definitions;
+the existing runtime supplies them. The build without the audio option has no
+SDL imports. Runtime, Xenos and Prism retain their previous installed
+identities. Steam Audio and the prepared WAVs are private installation files,
+with the SDK license and third-party notices. No game-derived files enter this
+repository.
+
+Deployment held the launch lock, verified the old manifest and absence of an
+installed game process, backed up replaced files, resolved 18 dependency
+objects, verified installed digests and passed isolated check-only preflight.
+Private collection `battle-accessibility-integration-20261015` retains build,
+test, content-audit and deployment evidence. The coding agent did not start
+or control the game or screen reader.
+
+User-controlled listening on 2026-10-15 confirms that the cue and new speech
+operate, but the cue onset is too sharp and its volume masks speech. The revised
+target permits playback only during player control or opponent ball movement;
+Bakugan selection and post-landing playback are unwanted. These adjustments
+are deferred. The next-session priority is the [settings UI rewrite, issue 33](https://github.com/RealAmethyst/bb-recomp/issues/33),
+starting with an inventory before designing extensible categories including
+Accessibility. The installed build remains unchanged.
+
+Detailed directional, lifecycle and per-screen speech checks remain incomplete.
+Audio supports an unambiguous single-human, non-team setup; Bakugan capture
+supports the verified one-to-three-row domain. Ability-card selection and
+tournament overview/round panels remain outside this test's speech coverage.
+
 ## Character creation and operation status
 
-Current private build: `diagnostic-20261014.9`, installed with `.8` backed up. Listening feedback requested direct descriptions without "The preview shows", "Selected" for the verified native selection marker, and silent appearance-preview loading. These changes preserve actual option names and descriptions, original preview rendering, and native saving/deleting status speech. The [character-creation record](character-creation.md) distinguishes verified loading draw submission from unverified physical visibility.
+Previous private build: `diagnostic-20261014.9`, installed with `.8` backed up. Listening feedback requested direct descriptions without "The preview shows", "Selected" for the verified native selection marker, and silent appearance-preview loading. These changes preserve actual option names and descriptions, original preview rendering, and native saving/deleting status speech. The [character-creation record](character-creation.md) distinguishes verified loading draw submission from unverified physical visibility.
 
 Follow-up verification passed: three SDK-free C++ fixtures and 70 Python tests; native ASan/UBSan fixtures with 354 original forwarding calls and 1,770 bounded reads; and selected-flag JSON serialization. A synthetic preview-text draw forwards normally with no speech event or extra guest reads. Existing operation-status cases remain covered. The 78-hook translation preserves all 46,056 original function bodies, removes only the two preview-loading observer calls, and retains the same 21 generator diagnostics. All 41 remaining game-UI wrappers link with their originals; the native build has no compiler warnings.
 
