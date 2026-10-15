@@ -12,6 +12,7 @@
   "runtime_failed": "Game runtime setup failed. Details are in the diagnostic log.",
   "runtime_error": "The runtime reported an error. Details are in the diagnostic log.",
   "audio_unavailable": "The audio system could not be initialized. The game was not started. Details are in the diagnostic log.",
+  "spatial_audio_unavailable": "Gate-card accessibility sounds are unavailable. Details are in the diagnostic log.",
   "launch_failed": "The game could not be started. Details are in the diagnostic log.",
   "process_failed": "The game process stopped with an error. Details are in the diagnostic log.",
   "early_exit": "The process ended before creating the game thread. Details are in the diagnostic log.",

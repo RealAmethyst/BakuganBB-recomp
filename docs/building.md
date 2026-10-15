@@ -75,6 +75,27 @@ The translation directory contains private generated game code and generation lo
 
 If generation fails, inspect `translation/codegen.log`. The tool preserves failed output for diagnosis; choose a new output directory for another attempt. Do not bypass an executable identity failure.
 
+### Optional spatial-audio development build
+
+The native target can also compile the accessibility audio engine with
+`-DBRAWLERS_STEAM_AUDIO_SDK_DIR=/path/to/external/steamaudio`. The directory must
+contain the Steam Audio 4.8.1 headers at `include/phonon.h`. It must remain outside
+the repository. Omitting this option preserves the build without the spatial
+audio dependency.
+
+Runtime initialization expects `bin/libphonon.so` and private mono float32,
+48 kHz clips at `accessibility-audio/gate-friendly.wav` and
+`accessibility-audio/gate-enemy.wav`, relative to the installation root. These are
+single sound cycles; the engine adds an equally long silent interval. Keep the
+SDK license and third-party notices with a private installation. No SDK binary
+or game-derived clip belongs in source control.
+
+The standard staging tool does not yet prepare those optional files. This is a
+development integration, with cue behavior and gameplay validation tracked in
+[issue 31](https://github.com/RealAmethyst/bb-recomp/issues/31). Release asset
+extraction remains deferred. See the [audio record](accessibility-audio.md) for
+the verified preparation and offline testing boundaries.
+
 ## 4. Build screen-reader support
 
 ```sh

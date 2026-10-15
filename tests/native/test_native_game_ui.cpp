@@ -814,5 +814,12 @@ int main() {
   assert(events.back().label == "Synthetic row 1");
   Call(sub_82348548, attribute); Call(sub_823B87A8, attribute);
   assert(events.back().kind == "closed" && events.back().id == attribute_identity);
+  static uint32_t removed_owner = 0;
+  SetGameTaskRemovedObserver([](uint32_t owner) noexcept { removed_owner = owner; });
+  Call(sub_823B87A8, 0xF000);
+  assert(removed_owner == 0xF000);
+  SetGameTaskRemovedObserver(nullptr);
+  Call(sub_823B87A8, 0xF100);
+  assert(removed_owner == 0xF000);
   std::printf("semantic lifecycle fixtures passed: %u original calls, %u bounded reads\n", originals, reads);
 }

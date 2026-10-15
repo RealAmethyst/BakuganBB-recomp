@@ -17,7 +17,8 @@ def parse_event(payload):
                 "opened", "focused", "closed", "resumed"}:
             return None
         if event.get("source") not in {
-                "message", "menu", "title", "logo", "popup", "save", "creator", "status"}:
+                "message", "menu", "title", "logo", "popup", "save", "creator", "status",
+                "battle_selection", "battle_versus"}:
             return None
         for key in ("id", "position", "total"):
             if type(event.get(key)) is not int or event[key] < 0:
@@ -26,7 +27,7 @@ def parse_event(payload):
             return None
         if bool(event["position"]) != bool(event["total"]):
             return None
-        if event["source"] == "status" and (event["position"] or event["total"]):
+        if event["source"] in {"status", "battle_versus"} and (event["position"] or event["total"]):
             return None
         event.setdefault("value", "")
         event.setdefault("selected", False)
@@ -85,7 +86,9 @@ class ScreenSpeech:
             if key:
                 # No fallback to another locale or a guessed caption.
                 event[field] = artwork.get(key, "")
-        if event["source"] in {"menu", "title", "popup", "save", "creator", "status"}:
+        if event["source"] in {
+                "menu", "title", "popup", "save", "creator", "status", "battle_selection",
+                "battle_versus"}:
             glyphs = self.messages.get("game_glyphs", {})
             for field in ("title", "body", "section", "label", "value", "description"):
                 event[field] = prepare_text(event[field], glyphs)

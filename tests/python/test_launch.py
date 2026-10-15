@@ -98,6 +98,19 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("runtime_error", events)
 
+    def test_missing_spatial_audio_is_announced_once_without_stopping_supervision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reporter = RecordingReporter()
+            script = ("print('BRAWLERS_STATUS:spatial_audio_unavailable\\n' * 2, end=''); "
+                      "print('BRAWLERS_STATUS:thread_created'); "
+                      "print('BRAWLERS_STATUS:guest_exited')")
+            code = launch.supervise([sys.executable, "-c", script], root, root / "log", reporter)
+            self.assertEqual(code, 1)
+            self.assertEqual([key for key, _ in reporter.events],
+                             ["spatial_audio_unavailable", "thread_created", "guest_exited", "closed"])
+            self.assertTrue(reporter.events[0][1]["speak"])
+
     def test_failure_before_host_hooks_is_reported(self):
         code, events, log = self.run_fixture("import sys; print('SDL failed', file=sys.stderr); sys.exit(2)")
         self.assertEqual((code, events), (1, ["process_failed"]))

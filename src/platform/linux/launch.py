@@ -19,10 +19,10 @@ PREFIX = "BRAWLERS_STATUS:"
 EVENTS = {
     "environment", "graphics", "runtime", "image_loaded", "preparing_thread",
     "thread_created", "guest_exited", "environment_failed", "graphics_failed",
-    "runtime_failed", "runtime_error", "audio_unavailable",
+    "runtime_failed", "runtime_error", "audio_unavailable", "spatial_audio_unavailable",
 }
 SPOKEN_EVENTS = {"environment_failed", "graphics_failed", "runtime_failed", "runtime_error",
-                 "audio_unavailable"}
+                 "audio_unavailable", "spatial_audio_unavailable"}
 
 
 class Reporter:

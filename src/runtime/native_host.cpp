@@ -8,9 +8,16 @@
 #include <rex/logging.h>
 #include <rex/cvar.h>
 #include <rex/rex_app.h>
+#include <rex/filesystem.h>
 
 #include "battle_brawlers_init.h"
 #include "native_game_ui.h"
+#include "native_battle_speech.h"
+#include "native_versus_speech.h"
+#ifdef BRAWLERS_SPATIAL_AUDIO
+#include "accessibility_audio.h"
+#include "native_gate_audio.h"
+#endif
 
 REXCVAR_DECLARE(bool, vulkan_timing_diagnostics);
 
@@ -91,14 +98,62 @@ class BattleBrawlersHost final : public rex::ReXApp {
 
   void OnPostLoadXexImage() override {
     auto* memory = runtime()->memory();
-    SetGameSpeechReader([memory](uint32_t address, void* output, size_t size) {
+    const auto reader = [memory](uint32_t address, void* output, size_t size) {
       return memory && memory->TryReadVirtual(address, output, size);
+    };
+    SetGameSpeechReader(reader);
+    SetBattleSpeechCapture(reader, QueueGameEvent, QueueGameDiagnostic, FailGameCapture);
+    SetVersusSpeechCapture(reader, QueueGameEvent, QueueGameDiagnostic, FailGameCapture);
+    SetGameTaskRemovedObserver([](uint32_t owner) noexcept {
+      NotifyBattleTaskRemoved(owner);
+      NotifyVersusTaskRemoved(owner);
     });
+#ifdef BRAWLERS_SPATIAL_AUDIO
+    using brawlers::audio::SpatialAudioRuntime;
+    brawlers::game::GateAudioOutput output;
+    output.context = &brawlers::audio::AccessibilityAudio();
+    output.capture_generation = [](void* context) noexcept {
+      return static_cast<SpatialAudioRuntime*>(context)->CaptureGeneration();
+    };
+    output.publish = [](void* context, const brawlers::audio::Scene& scene,
+                        uint64_t generation) noexcept {
+      return static_cast<SpatialAudioRuntime*>(context)->Publish(scene, generation);
+    };
+    output.invalidate = [](void* context) noexcept {
+      static_cast<SpatialAudioRuntime*>(context)->Invalidate();
+    };
+    output.diagnostic = [](void*, std::string_view reason) noexcept {
+      QueueGameDiagnostic(reason);
+    };
+    brawlers::game::SetGateAudioCapture(reader, output);
+#endif
     Report("image_loaded");
+  }
+  void OnPostSetup() override {
+#ifdef BRAWLERS_SPATIAL_AUDIO
+    const auto installation = rex::filesystem::GetExecutableFolder().parent_path();
+    if (!brawlers::audio::InitializeAccessibilityAudio(installation)) {
+      Report("spatial_audio_unavailable");
+    } else {
+      brawlers::game::ConfigureGateAudioCapture(
+          brawlers::game::GateAudioActivation::NativeCardRendering);
+    }
+#endif
+  }
+  void OnShutdown() override {
+#ifdef BRAWLERS_SPATIAL_AUDIO
+    brawlers::game::ConfigureGateAudioCapture(brawlers::game::GateAudioActivation::Disabled);
+    brawlers::audio::ShutdownAccessibilityAudio();
+#endif
   }
   void OnPreLaunchModule() override { Report("preparing_thread"); }
   void OnPostLaunchModule(rex::system::XThread*) override { Report("thread_created"); }
-  void OnGuestThreadExit(rex::system::XThread*) override { Report("guest_exited"); }
+  void OnGuestThreadExit(rex::system::XThread*) override {
+#ifdef BRAWLERS_SPATIAL_AUDIO
+    brawlers::audio::AccessibilityAudio().Invalidate();
+#endif
+    Report("guest_exited");
+  }
 };
 
 }  // namespace

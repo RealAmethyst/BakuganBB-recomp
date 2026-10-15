@@ -39,6 +39,31 @@ class ScreenTests(unittest.TestCase):
         self.send("focused", label="Only row", position=1, total=1)
         self.assertEqual(self.calls, [("Only row, 1 of 1", True)])
 
+    def test_battle_selection_uses_game_text_and_native_lifetime(self):
+        self.reader.messages["game_glyphs"] = {"\ue000": "Confirm"}
+        opening = event("opened", source="battle_selection")
+        self.assertEqual(parse_event(json.dumps(opening)), opening)
+        self.reader.handle(opening)
+        self.send("focused", source="battle_selection", label="Synthetic card",
+                  description="Synthetic effect", position=1, total=3, hints=["\ue000"])
+        self.send("focused", source="battle_selection", label="Synthetic Bakugan",
+                  position=2, total=3)
+        self.send("closed", source="battle_selection")
+        self.send("focused", source="battle_selection", label="Stale selection",
+                  position=1, total=3)
+        self.assertEqual(self.calls, [("Synthetic card, Synthetic effect, 1 of 3", True),
+                                     ("Confirm", False), ("Synthetic Bakugan, 2 of 3", True)])
+
+    def test_versus_names_speak_once_per_native_lifetime_without_a_menu_index(self):
+        opening = event("opened", source="battle_versus", body="Synthetic opponent A, Synthetic opponent B")
+        self.assertEqual(parse_event(json.dumps(opening)), opening)
+        self.assertIsNone(parse_event(json.dumps(opening | {"label": "Opponent", "position": 1, "total": 2})))
+        self.reader.handle(opening)
+        self.reader.handle(opening)
+        self.send("closed", source="battle_versus")
+        self.reader.handle(opening | {"id": 2})
+        self.assertEqual(self.calls, [(opening["body"], True), (opening["body"], True)])
+
     def test_popup_body_then_single_option_without_index(self):
         self.send("opened", source="message", body="Synthetic question?")
         self.send("focused", source="message", label="Continue", position=1, total=1)

@@ -1,6 +1,61 @@
 # Pinned baseline instruction events. See docs/localization-consumers.md.
 # No instruction is replaced, skipped or permitted to mutate CPU registers.
 
+# Battle selection lifetime and actual common-hint text consumer.
+[[midasm_hook]]
+address = 0x822515D8
+name = "BrawlersBakuganSelectionReady"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82251604
+name = "BrawlersBakuganSelectionSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82251610
+name = "BrawlersBakuganSelectionSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8224F7F4
+name = "BrawlersBakuganSelectionCommitted"
+registers = ["r31", "r30", "r3"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8224F860
+name = "BrawlersBakuganSelectionCleared"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82271638
+name = "BrawlersGateSelectionReady"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822716B4
+name = "BrawlersGateSelectionSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82231FEC
+name = "BrawlersBattleSelectionChanged"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821E9E9C
+name = "BrawlersBattleHintDraw"
+registers = ["r29", "r28", "r27"]
+after_instruction = true
+
 [[midasm_hook]]
 address = 0x821E0FE4
 name = "BrawlersPopupStateChanged"
