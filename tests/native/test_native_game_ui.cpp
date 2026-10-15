@@ -36,6 +36,13 @@ HOOK(823A9528);
 HOOK(823A9908);
 HOOK(823A9A38);
 HOOK(821DF130);
+HOOK(8232C3E0);
+HOOK(8232BB28);
+HOOK(8232BC00);
+HOOK(8232EB88);
+HOOK(8232E448);
+HOOK(8232E830);
+HOOK(82349F58); HOOK(82348548); HOOK(8234A890); HOOK(8234C0D0);
 #undef HOOK
 void BrawlersMainMenuStateChanged(PPCRegister&, PPCRegister&);
 void BrawlersMainMenuSelectionChanged(PPCRegister&, PPCRegister&, PPCRegister&);
@@ -59,6 +66,10 @@ void BrawlersTextRecord(PPCRegister&);
 void BrawlersNativeSelectionChanged(PPCRegister&, PPCRegister&);
 void BrawlersPopupStateChanged(PPCRegister&, PPCRegister&);
 void BrawlersSaveStateChanged(PPCRegister&, PPCRegister&);
+void BrawlersCreatorStateChanged(PPCRegister&, PPCRegister&);
+void BrawlersCreatorTransitionChanged(PPCRegister&, PPCRegister&);
+void BrawlersCreatorMarkerAbsent(PPCRegister&);
+void BrawlersAttributeStateChanged(PPCRegister&, PPCRegister&);
 
 // Use the actual recursive-lock contract without initializing runtime services.
 std::recursive_mutex& rex::thread::global_critical_region::mutex() {
@@ -173,6 +184,13 @@ STUB(823A9528)
 STUB(823A9908)
 STUB(823A9A38)
 STUB(821DF130)
+STUB(8232C3E0)
+STUB(8232BB28)
+STUB(8232BC00)
+STUB(8232EB88)
+STUB(8232E448)
+STUB(8232E830)
+STUB(82349F58); STUB(82348548); STUB(8234A890); STUB(8234C0D0);
 #undef STUB
 
 int main() {
@@ -460,10 +478,341 @@ int main() {
   Call(sub_821EA650, 0xDEAD);
   assert(events.size() == after_hint && reads == before_cached_hint_reads);
   Call(sub_821DF478, popup);
+
+  // No-choice operation messages use the same owned final text, without a list.
+  const auto before_status = events.size();
+  Word(popup, 0x82003C70);
+  PPCContext status{};
+  status.r3.u32 = popup; status.r4.u32 = 2;
+  status.r6.u32 = 4; status.r7.u32 = 99;
+  sub_821DFBE8(status, opaque); assert(FlushGameSpeech());
+  Word(popup, 0x82003CB0);
+  Event(BrawlersPopupStateChanged, popup, 2);
+  assert(events.size() == before_status); // A request is not displayed text.
+  Text(0x4000, u"Synthetic operation in progress");
+  const auto before_wrong_body = reads;
+  Call(sub_821E1790, 0xDEAD); // The prior synthetic bank/ID do not match.
+  assert(events.size() == before_status && reads == before_wrong_body);
+  actions[0x821E1790] = [](PPCContext&) {
+    PPCRegister record{}; record.u32 = popup + 0x74; BrawlersTextRecord(record);
+    PPCContext render{}; render.r4.u32 = 4; render.r5.u32 = 99;
+    sub_823A9908(render, opaque);
+  };
+  Call(sub_821E1790, 0xDEAD);
+  assert(events.size() == before_status + 1);
+  assert(events.back().source == "status" && events.back().kind == "opened");
+  assert(events.back().body == "Synthetic operation in progress");
+  assert(events.back().position == 0 && events.back().total == 0);
+  assert(events.back().label.empty() && events.back().label_key.empty());
+  assert(events.back().hints.empty());
+  const auto status_identity = events.back().id;
+  const auto cached_status_reads = reads;
+  Call(sub_821E1790, 0xDEAD); Call(sub_821EA650, 0xDEAD);
+  assert(events.size() == before_status + 1 && reads == cached_status_reads);
+  Event(BrawlersPopupStateChanged, popup, 3);
+  Call(sub_823B87A8, popup); Call(sub_821DF478, popup);
+  assert(events.size() == before_status + 2 && events.back().source == "status");
+  assert(events.back().kind == "closed" && events.back().id == status_identity);
+  Call(sub_821E1790, 0xDEAD);
+  assert(events.size() == before_status + 2);
+  // A removed request with no text rendering never manufactures a message.
+  Word(popup, 0x82003C70);
+  status = {}; status.r3.u32 = popup; status.r4.u32 = 2;
+  sub_821DFBE8(status, opaque); assert(FlushGameSpeech());
+  Word(popup, 0x82003CB0);
+  Event(BrawlersPopupStateChanged, popup, 2);
+  Call(sub_821DF478, popup);
+  assert(events.size() == before_status + 2);
   Call(sub_822D3830, save); Call(sub_822D30D8, save);
   const auto after_save = events.size();
   Call(sub_822D6BD0, 0xD600); Call(sub_823B87A8, save);
   assert(events.size() == after_save && events.back().kind == "closed");
 
+  // Original synthetic creator state: seven enabled category rows plus reserved row eight.
+  constexpr uint32_t creator = 0xE000, enabled = 0xF000;
+  Word(creator, 0x820196BC); Word(creator + 0x2C, 1); Word(creator + 0x9C, UINT32_MAX);
+  Word(creator + 0xB8, 0x8200FC30); Word(creator + 0xE0, creator + 0xF8);
+  Word(creator + 0xF8, 0x8200FC10); Word(creator + 0x100, enabled);
+  Word(creator + 0x108, 0); Word(creator + 0x10C, 9);
+  bytes[0x82019469] = 7; Word(0x829A2008, 0x82019460);
+  bytes[0x82019460] = 1; bytes[0x82019461] = 2;
+  bytes[0x820194FE] = 0; bytes[0x820194FF] = 100;
+  bytes[0x82019500] = 0; bytes[0x82019501] = 101;
+  for (uint32_t row = 0; row < 9; ++row) bytes[enabled + row] = row != 7;
+  Call(sub_8232C3E0, creator); Call(sub_8232BC00, creator);
+  const auto creator_before = events.size();
+  Event(BrawlersCreatorTransitionChanged, creator, 1);
+  assert(events.size() == creator_before);
+  Event(BrawlersCreatorStateChanged, creator, 3);
+  assert(events.size() == creator_before + 1 && events.back().source == "creator");
+  assert(events.back().kind == "opened" && events.back().title.empty());
+  const auto creator_identity = events.back().id;
+  const auto render_creator = [&](uint32_t address, uint32_t id, const char16_t* value,
+                                  uint32_t record = creator + 0x68) {
+    Text(0xFC00, value);
+    actions[0x823A9908] = [](PPCContext&) {
+      PPCContext final{}; final.r4.u32 = 0xFC00; final.lr = 0x823A9A24;
+      sub_823A9528(final, opaque);
+    };
+    actions[address] = [=](PPCContext&) {
+      PPCRegister native_record{}; native_record.u32 = record; BrawlersTextRecord(native_record);
+      if (!id && address == 0x8232E830) {
+        PPCRegister widget{}; BrawlersCreatorMarkerAbsent(widget);
+      }
+      if (id) {
+        PPCContext render{}; render.r4.u32 = 0; render.r5.u32 = id;
+        sub_823A9908(render, opaque);
+      }
+    };
+    if (address == 0x8232EB88) Call(sub_8232EB88, 0xDEAD);
+    else if (address == 0x8232E830) Call(sub_8232E830, 0xDEAD);
+    else if (address == 0x8232E448) Call(sub_8232E448, 0xDEAD);
+    else Call(sub_821EA650, 0xDEAD);
+  };
+  render_creator(0x8232EB88, 100, u"Synthetic category");
+  assert(events.size() == creator_before + 1); // Marker decision has not rendered yet.
+  render_creator(0x8232E830, 0, u"");
+  assert(events.back().label == "Synthetic category" && events.back().position == 1);
+  assert(events.back().total == 8 && events.back().section.empty());
+  Text(0xFC00, u"Synthetic select and back");
+  actions[0x821EA650] = [](PPCContext&) {
+    PPCRegister record{}; record.u32 = 0xA094; BrawlersTextRecord(record);
+    PPCContext draw{}; draw.r4.u32 = 0xFC00; draw.lr = 0x821EACD8;
+    sub_823A9528(draw, opaque); // Composite hint path has no localization wrapper.
+  };
+  Call(sub_821EA650, 0xDEAD);
+  render_creator(0x8232E448, 0xA23, u"Synthetic rotate");
+  assert(events.back().hints.size() == 2 && events.back().id == creator_identity);
+  auto creator_cached_reads = reads;
+  auto creator_cached_events = events.size();
+  for (unsigned repeat = 0; repeat < 5; ++repeat) {
+    render_creator(0x8232EB88, 100, u"Already captured");
+    render_creator(0x8232E830, 0, u"");
+    render_creator(0x8232E448, 0xA23, u"Already captured");
+    render_creator(0x821EA650, 0x9EC, u"Already captured", 0xA094);
+  }
+  assert(reads == creator_cached_reads && events.size() == creator_cached_events);
+  Event(BrawlersNativeSelectionChanged, creator + 0xB8, 1);
+  creator_cached_reads = reads;
+  render_creator(0x8232EB88, 100, u"Outgoing crossfade");
+  assert(reads == creator_cached_reads && events.size() == creator_cached_events);
+  render_creator(0x8232E830, 0, u"");
+  render_creator(0x8232EB88, 101, u"Synthetic second category");
+  assert(events.back().label == "Synthetic second category" && events.back().position == 2);
+  assert(events.back().hints.empty());
+  creator_cached_events = events.size();
+  Event(BrawlersNativeSelectionChanged, creator + 0xB8, 7);
+  render_creator(0x8232EB88, 101, u"Disabled hole");
+  assert(events.size() == creator_cached_events);
+  Event(BrawlersNativeSelectionChanged, creator + 0xB8, 8);
+  assert(events.back().label_key == "popup_ok" && events.back().position == 8);
+  assert(events.back().total == 8 && events.back().description_key.empty());
+  creator_cached_reads = reads;
+  render_creator(0x8232EB88, 101, u"Last category is not the reserved button");
+  assert(reads == creator_cached_reads);
+
+  // A native palette configuration is a subscreen transition, retaining the screen identity.
+  Word(creator + 0x9C, 3); bytes[0x820194B7] = 3; Word(creator + 0x108, 1);
+  for (uint32_t row = 0; row < 9; ++row) bytes[enabled + row] = row < 3;
+  bytes[0x82019562] = 1; bytes[0x82019563] = 44; // Synthetic ID300, category3/row1.
+  bytes[0x82019564] = 1; bytes[0x82019565] = 45;
+  Call(sub_8232BC00, creator);
+  creator_cached_events = events.size();
+  render_creator(0x8232EB88, 300, u"Not active yet");
+  assert(events.size() == creator_cached_events);
+  Event(BrawlersCreatorTransitionChanged, creator, 1);
+  render_creator(0x8232EB88, 300, u"Synthetic color");
+  // A marker animation gate is not evidence that the conditional marker is absent.
+  actions[0x8232E830] = [](PPCContext&) {
+    PPCRegister record{}; record.u32 = creator + 0x68; BrawlersTextRecord(record);
+  };
+  Call(sub_8232E830, 0xDEAD);
+  assert(events.size() == creator_cached_events);
+  render_creator(0x8232E830, 0x927, u"Synthetic accepted marker");
+  assert(events.back().kind == "resumed" && events.back().id == creator_identity);
+  assert(events.back().label == "Synthetic color" && events.back().selected);
+  assert(events.back().description.empty());
+  assert(events.back().position == 2 && events.back().total == 3);
+  assert(events.back().description_key == "creator_3_1" && events.back().section.empty());
+  Event(BrawlersNativeSelectionChanged, creator + 0xB8, 2);
+  render_creator(0x8232E830, 0, u"");
+  render_creator(0x8232EB88, 301, u"Synthetic next color");
+  assert(events.back().kind == "focused" && events.back().description.empty());
+  assert(!events.back().selected);
+  assert(events.back().position == 3 && events.back().total == 3);
+  // Back stores the closing transition before the state-three event; no stale resume.
+  creator_cached_events = events.size();
+  Event(BrawlersCreatorStateChanged, creator, 5);
+  Event(BrawlersCreatorTransitionChanged, creator, 3);
+  Event(BrawlersCreatorStateChanged, creator, 3);
+  assert(events.size() == creator_cached_events);
+  Word(creator + 0x9C, UINT32_MAX); Word(creator + 0x108, 1);
+  for (uint32_t row = 0; row < 9; ++row) bytes[enabled + row] = row != 7;
+  Call(sub_8232BC00, creator);
+  Event(BrawlersCreatorTransitionChanged, creator, 1);
+  render_creator(0x8232E830, 0, u"");
+  render_creator(0x8232EB88, 101, u"Synthetic second category");
+  assert(events.back().kind == "resumed" && events.back().id == creator_identity);
+  assert(events.back().position == 2 && events.back().total == 8);
+  // A child popup suspends, then resumes the same creator without repeating hints.
+  Event(BrawlersCreatorStateChanged, creator, 6);
+  creator_cached_events = events.size();
+  render_creator(0x8232EB88, 301, u"Hidden parent");
+  assert(events.size() == creator_cached_events);
+  Event(BrawlersCreatorStateChanged, creator, 3);
+  assert(events.back().kind == "resumed" && events.back().id == creator_identity);
+  assert(events.back().hints.empty());
+
+  creator_cached_events = events.size();
+  // Preview-loading text still reaches the game's renderer without becoming speech.
+  // No creator wrapper or text-record hook participates in this native path.
+  const auto preview_reads = reads;
+  Text(0xFC00, u"Synthetic actor loading");
+  PPCContext preview{}; preview.r4.u32 = 0; preview.r5.u32 = 0x91F;
+  sub_823A9908(preview, opaque);
+  assert(events.size() == creator_cached_events && reads == preview_reads);
+  // Malformed reconfiguration invalidates the old snapshot and cannot speak stale text.
+  bytes[enabled + 7] = 1;
+  Call(sub_8232BC00, creator);
+  Event(BrawlersCreatorTransitionChanged, creator, 1);
+  render_creator(0x8232EB88, 301, u"Invalid configured list");
+  assert(events.size() == creator_cached_events);
+  Call(sub_8232BB28, creator); Call(sub_823B87A8, creator);
+  assert(events.back().source == "creator" && events.back().kind == "closed");
+  assert(events.back().id == creator_identity);
+
+  // Story mode has eight categories and all three actual hints, including randomize.
+  Word(creator + 0x2C, 0); Word(creator + 0x9C, UINT32_MAX); Word(creator + 0x108, 0);
+  bytes[0x82019468] = 8; Word(0x829A2004, 0x82019458); bytes[0x82019458] = 1;
+  for (uint32_t row = 0; row < 9; ++row) bytes[enabled + row] = 1;
+  Call(sub_8232C3E0, creator); Call(sub_8232BC00, creator);
+  Event(BrawlersCreatorTransitionChanged, creator, 1);
+  Event(BrawlersCreatorStateChanged, creator, 3);
+  render_creator(0x8232E830, 0, u"");
+  render_creator(0x8232EB88, 100, u"Synthetic story category");
+  assert(events.back().total == 9 && events.back().id != creator_identity);
+  render_creator(0x821EA650, 0x9EC, u"Synthetic select and back", 0xA094);
+  render_creator(0x8232E448, 0xA23, u"Synthetic rotate");
+  assert(events.back().hints.empty());
+  render_creator(0x8232E448, 0x94A, u"Synthetic randomize");
+  assert(events.back().hints.size() == 3);
+  Event(BrawlersNativeSelectionChanged, creator + 0xB8, 8);
+  assert(events.back().position == 9 && events.back().total == 9);
+  Call(sub_823B87A8, creator); Call(sub_8232BB28, creator);
+
+  // Leaving the root before its Random hint renders must not prevent submenu hints.
+  Word(creator + 0x108, 0);
+  Call(sub_8232C3E0, creator); Call(sub_8232BC00, creator);
+  Event(BrawlersCreatorTransitionChanged, creator, 1);
+  Event(BrawlersCreatorStateChanged, creator, 3);
+  render_creator(0x8232E830, 0, u"");
+  render_creator(0x8232EB88, 100, u"Synthetic story category");
+  render_creator(0x821EA650, 0x9EC, u"Synthetic select and back", 0xA094);
+  render_creator(0x8232E448, 0xA23, u"Synthetic rotate");
+  assert(events.back().hints.empty());
+  Word(creator + 0x9C, 3); Word(creator + 0x108, 1);
+  for (uint32_t row = 0; row < 9; ++row) bytes[enabled + row] = row < 3;
+  Call(sub_8232BC00, creator);
+  Event(BrawlersCreatorTransitionChanged, creator, 1);
+  render_creator(0x8232E830, 0, u"");
+  render_creator(0x8232EB88, 300, u"Synthetic submenu option");
+  assert(events.back().hints.size() == 2);
+  Call(sub_823B87A8, creator);
+
+  // Synthetic provider entries exercise cursor mapping independently of committed preview.
+  constexpr uint32_t provider = 0x20000, bank = 0x21000, resource = 0x22000;
+  Word(0x829CEB78, provider); Word(provider, 0x82036508);
+  Word(provider + 8, bank); bytes[provider + 0xC] = 1; bytes[bank + 0x60] = 1;
+  Word(bank, resource); Word(bank + 4, resource + 0x3000); Word(bank + 8, resource + 0x20);
+  Word(resource, 0x70617374); Word(resource + 4, 0x7274626C);
+  bytes[resource + 0xB] = 1; Word(resource + 0xC, 0x989);
+  Word(resource + 0x10, 0x20); Word(resource + 0x14, 0x3000);
+  for (uint32_t id = 0; id < 0x989; ++id) {
+    Word(resource + 0x20 + id * 4, 0x5000 + id * 0x80);
+    Text(resource + 0x5000 + id * 0x80, u"Synthetic text");
+  }
+  constexpr std::array<uint32_t, 6> attribute_names{0x656, 0x65A, 0x658, 0x659, 0x657, 0x65B};
+  constexpr std::array<uint32_t, 6> attribute_descriptions{0x985, 0x983, 0x986, 0x982, 0x987, 0x984};
+  for (uint32_t row = 0; row < 6; ++row) {
+    const std::u16string label = u"Synthetic row " + std::u16string(1, u'1' + row);
+    const std::u16string description = u"Synthetic description " + std::u16string(1, u'1' + row);
+    Text(resource + 0x5000 + attribute_names[row] * 0x80, label.c_str());
+    Text(resource + 0x5000 + attribute_descriptions[row] * 0x80, description.c_str());
+  }
+  constexpr uint32_t attribute = 0xB0000, attribute_enabled = 0xB4000;
+  Word(attribute, 0x8201A8D0); Word(attribute + 0x48, 0x8200FC30);
+  Word(attribute + 0x70, attribute + 0x88); Word(attribute + 0x88, 0x8200FC10);
+  Word(attribute + 0x90, attribute_enabled); Word(attribute + 0x98, 4);
+  Word(attribute + 0x9C, 7);
+  for (uint32_t row = 0; row < 7; ++row) bytes[attribute_enabled + row] = 1;
+  const auto render_attribute = [&](uint32_t address, uint32_t id, const char16_t* value,
+                                    uint32_t record) {
+    Text(0xFC00, value);
+    actions[0x823A9908] = [](PPCContext&) {
+      PPCContext final{}; final.r4.u32 = 0xFC00; final.lr = 0x823A9A24;
+      sub_823A9528(final, opaque);
+    };
+    actions[address] = [=](PPCContext&) {
+      PPCRegister native_record{}; native_record.u32 = record; BrawlersTextRecord(native_record);
+      PPCContext draw{}; draw.r4.u32 = 0; draw.r5.u32 = id; sub_823A9908(draw, opaque);
+    };
+    if (address == 0x8234A890) Call(sub_8234A890, 0xDEAD);
+    else if (address == 0x8234C0D0) Call(sub_8234C0D0, 0xDEAD);
+    else Call(sub_821EA650, 0xDEAD);
+  };
+  Call(sub_82349F58, attribute);
+  auto attribute_events = events.size();
+  render_attribute(0x8234A890, 0x6B9, u"Hidden title", attribute + 0xA8);
+  assert(events.size() == attribute_events);
+  Event(BrawlersAttributeStateChanged, attribute, 7);
+  render_attribute(0x8234A890, 0x6B9, u"Synthetic attribute title", attribute + 0xA8);
+  assert(events.size() == attribute_events);
+  render_attribute(0x8234C0D0, 0x96A, u"", attribute + 0xD0);
+  assert(events.size() == attribute_events);
+  render_attribute(0x8234C0D0, 0x96A, u"Synthetic instruction", attribute + 0xD0);
+  assert(events.size() == attribute_events + 2);
+  const auto attribute_identity = events.back().id;
+  assert(events[attribute_events].title == "Synthetic attribute title");
+  assert(events[attribute_events].body == "Synthetic instruction");
+  assert(events.back().label == "Synthetic row 5" && events.back().description == "Synthetic description 5");
+  assert(events.back().position == 5 && events.back().total == 7);
+  render_attribute(0x821EA650, 0x9EC, u"Synthetic parent hints", 0xA094);
+  assert(events.back().hints.size() == 1);
+  auto attribute_reads = reads; attribute_events = events.size();
+  render_attribute(0x8234A890, 0x6B9, u"Cached title", attribute + 0xA8);
+  render_attribute(0x8234C0D0, 0x96A, u"Cached instruction", attribute + 0xD0);
+  render_attribute(0x821EA650, 0x9EC, u"Cached hints", 0xA094);
+  Event(BrawlersAttributeStateChanged, attribute, 7);
+  Event(BrawlersNativeSelectionChanged, attribute + 0x48, 4);
+  assert(reads == attribute_reads && events.size() == attribute_events);
+  for (uint32_t row = 0; row < 6; ++row) {
+    Event(BrawlersNativeSelectionChanged, attribute + 0x48, row);
+    assert(events.back().label == "Synthetic row " + std::to_string(row + 1));
+    assert(events.back().description == "Synthetic description " + std::to_string(row + 1));
+    assert(events.back().position == row + 1 && events.back().total == 7);
+    assert(events.back().hints.empty());
+  }
+  Event(BrawlersNativeSelectionChanged, attribute + 0x48, 6);
+  assert(events.back().label_key == "popup_ok" && events.back().position == 7);
+  assert(events.back().description.empty());
+  Event(BrawlersAttributeStateChanged, attribute, 8);
+  attribute_events = events.size(); attribute_reads = reads;
+  Event(BrawlersNativeSelectionChanged, attribute + 0x48, 1);
+  render_attribute(0x8234C0D0, 0x96A, u"Hidden instruction", attribute + 0xD0);
+  assert(events.size() == attribute_events && reads == attribute_reads);
+  Word(attribute + 0x98, 2);
+  Event(BrawlersAttributeStateChanged, attribute, 7);
+  assert(events.back().kind == "resumed" && events.back().id == attribute_identity);
+  assert(events.back().label == "Synthetic row 3");
+  assert(events.back().hints.empty());
+  // A malformed provider read invalidates the new item, retaining no old caption.
+  Word(resource, 0); attribute_events = events.size();
+  Event(BrawlersNativeSelectionChanged, attribute + 0x48, 0);
+  assert(events.size() == attribute_events);
+  Word(resource, 0x70617374);
+  Event(BrawlersNativeSelectionChanged, attribute + 0x48, 0);
+  assert(events.back().label == "Synthetic row 1");
+  Call(sub_82348548, attribute); Call(sub_823B87A8, attribute);
+  assert(events.back().kind == "closed" && events.back().id == attribute_identity);
   std::printf("semantic lifecycle fixtures passed: %u original calls, %u bounded reads\n", originals, reads);
 }

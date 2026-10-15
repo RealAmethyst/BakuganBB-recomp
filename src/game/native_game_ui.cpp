@@ -3,6 +3,7 @@
 #include "native_game_ui.h"
 #include "native_speech.h"
 #include "game_speech_queue.h"
+#include "native_localization.h"
 
 #include <cfenv>
 #include <cstdio>
@@ -48,6 +49,16 @@ ORIGINAL(823A9528);
 ORIGINAL(823A9908);
 ORIGINAL(823A9A38);
 ORIGINAL(821DF130);
+ORIGINAL(8232C3E0);
+ORIGINAL(8232BB28);
+ORIGINAL(8232BC00);
+ORIGINAL(8232EB88);
+ORIGINAL(8232E448);
+ORIGINAL(8232E830);
+ORIGINAL(82349F58);
+ORIGINAL(82348548);
+ORIGINAL(8234A890);
+ORIGINAL(8234C0D0);
 #undef ORIGINAL
 
 namespace {
@@ -92,6 +103,21 @@ std::map<uint32_t, Screen> titles;
 std::map<uint32_t, Screen> logos;
 std::map<uint32_t, Screen> saves;
 std::map<uint32_t, Screen> popups;
+struct Creator {
+  Screen screen;
+  uint32_t state = 0, transition = 0, mode = 0, count = 0;
+  int32_t category = -1;
+  uint32_t expected_text = 0;
+  bool configured = false, marker_checked = false;
+  std::string label, marker;
+  std::map<uint32_t, std::string> hints;
+};
+std::map<uint32_t, Creator> creators;
+struct AttributeMenu {
+  Screen screen;
+  std::string label, description;
+};
+std::map<uint32_t, AttributeMenu> attributes;
 thread_local uint32_t drawing_movie = 0;
 
 struct MoviePicture {
@@ -118,11 +144,14 @@ thread_local MovieOutput movie_output;
 
 enum class TextScope {
   None, MenuDescription, MenuHints, TitlePrompt,
-  SaveName, SaveDate, SaveTime, SaveEmpty, SaveHints, PopupBody, PopupHints
+  SaveName, SaveDate, SaveTime, SaveEmpty, SaveHints, PopupBody, PopupHints,
+  CreatorLabel, CreatorMarker, CreatorHints, CreatorCommonHints,
+  AttributeTitle, AttributeInstruction, AttributeHints
 };
 thread_local TextScope text_scope = TextScope::None;
 thread_local uint32_t text_owner = 0;
 thread_local uint32_t building_save = 0;
+thread_local uint32_t creator_hint_id = 0;
 struct SaveWidget { uint32_t owner; TextScope scope; };
 std::map<uint32_t, SaveWidget> save_widgets;
 
@@ -183,11 +212,292 @@ void CommonResource(Screen& screen) {
   screen.locale = *resource - 0x8CB;
 }
 
+bool AttributeScope(TextScope scope) {
+  return scope == TextScope::AttributeTitle || scope == TextScope::AttributeInstruction ||
+         scope == TextScope::AttributeHints;
+}
+
+void EmitAttribute(AttributeMenu& attribute) {
+  auto& screen = attribute.screen;
+  if (!screen.active || !screen.verified) return;
+  const auto title = screen.text.find(0x6B9), instruction = screen.text.find(0x96A);
+  if (title == screen.text.end() || instruction == screen.text.end()) return;
+  if (!screen.opened) {
+    auto event = Event("creator", "opened", screen);
+    event.title = title->second;
+    event.body = instruction->second;
+    Output().Enqueue(std::move(event));
+    screen.opened = true;
+  }
+  if (!screen.focused || (screen.selection == 6 && !screen.locale)) return;
+  const auto fingerprint = std::to_string(screen.selection) + "\n" + attribute.label +
+                           "\n" + attribute.description;
+  if (fingerprint == screen.last_item && !screen.resume &&
+      (screen.hints.empty() || screen.hints_sent)) return;
+  auto event = Event("creator", screen.resume ? "resumed" : "focused", screen);
+  if (screen.selection == 6) event.label_key = "popup_ok";
+  else event.label = attribute.label;
+  event.description = attribute.description;
+  event.position = screen.selection + 1;
+  event.total = 7;
+  if (!screen.hints_sent && !screen.hints.empty()) event.hints.push_back(screen.hints);
+  Output().Enqueue(std::move(event));
+  screen.last_item = fingerprint;
+  screen.resume = false;
+  screen.hints_sent = !screen.hints.empty();
+}
+
+void AttributeSelection(AttributeMenu& attribute, uint32_t selected) {
+  auto& screen = attribute.screen;
+  if (!screen.active || !screen.verified) return;
+  if (!Guard(selected < 7, "attribute_selection_event")) {
+    screen.focused = false;
+    return;
+  }
+  if (screen.focused && screen.selection == selected) {
+    EmitAttribute(attribute);
+    return;
+  }
+  screen.selection = selected;
+  screen.focused = false;
+  attribute.label.clear();
+  attribute.description.clear();
+  if (selected < 6) {
+    // Original cursor-to-attribute map composed with the displayed caption tables.
+    constexpr std::array<uint32_t, 6> labels{0x656, 0x65A, 0x658, 0x659, 0x657, 0x65B};
+    constexpr std::array<uint32_t, 6> descriptions{0x985, 0x983, 0x986, 0x982, 0x987, 0x984};
+    const auto label = brawlers::ui::ReadMenuText(memory, labels[selected]);
+    if (!Guard(label.value.has_value(), label.reason)) return;
+    const auto description = brawlers::ui::ReadMenuText(memory, descriptions[selected]);
+    if (!Guard(description.value.has_value(), description.reason)) return;
+    attribute.label = *label.value;
+    attribute.description = *description.value;
+  }
+  screen.focused = true;
+  EmitAttribute(attribute);
+}
+
+void ActivateAttribute(uint32_t owner, AttributeMenu& attribute) {
+  auto& screen = attribute.screen;
+  screen.active = false;
+  screen.verified = false;
+  if (!Object(owner, 0x8201A8D0, "attribute_active_table") ||
+      !Object(owner + 0x48, 0x8200FC30, "attribute_selector_table")) return;
+  const auto nested = memory.U32BE(owner + 0x70);
+  if (!Guard(nested == owner + 0x88, "attribute_nested_owner") ||
+      !Object(*nested, 0x8200FC10, "attribute_nested_table") ||
+      !Guard(memory.U32BE(*nested + 0x14) == 7, "attribute_selector_count")) return;
+  const auto enabled = memory.U32BE(*nested + 8), selected = memory.U32BE(*nested + 0x10);
+  if (!Guard(enabled.has_value() && *enabled && *enabled <= UINT32_MAX - 7,
+             "attribute_enabled_storage") ||
+      !Guard(selected.has_value() && *selected < 7, "attribute_initial_selection")) return;
+  for (uint32_t row = 0; row < 7; ++row)
+    if (!Guard(memory.U8(*enabled + row) == 1, "attribute_enabled_row")) return;
+  screen.locale = 0;
+  screen.text_root = 0;
+  CommonResource(screen);
+  screen.active = true;
+  screen.verified = true;
+  screen.resume = screen.opened;
+  AttributeSelection(attribute, *selected);
+}
+
+void CloseAttribute(uint32_t owner) {
+  const auto found = attributes.find(owner);
+  if (found == attributes.end()) return;
+  if (found->second.screen.opened)
+    Output().Enqueue(Event("creator", "closed", found->second.screen));
+  attributes.erase(found);
+}
+
+uint32_t AttributeTextOwner(TextScope scope, uint32_t record) {
+  const auto offset = scope == TextScope::AttributeTitle ? 0xA8U : 0xD0U;
+  const auto found = record >= offset ? attributes.find(record - offset) : attributes.end();
+  if (found == attributes.end() || !found->second.screen.active) return 0;
+  const auto id = scope == TextScope::AttributeTitle ? 0x6B9U : 0x96AU;
+  return found->second.screen.text.contains(id) ? 0 : found->first;
+}
+
+void CaptureAttributeText(uint32_t pointer) {
+  const auto found = attributes.find(text_owner);
+  if (found == attributes.end() || !found->second.screen.active) return;
+  auto& attribute = found->second;
+  const auto id = text_scope == TextScope::AttributeTitle ? 0x6B9U : 0x96AU;
+  if (text_scope == TextScope::AttributeHints ? !attribute.screen.hints.empty() :
+      attribute.screen.text.contains(id)) return;
+  const auto text = memory.Text(pointer);
+  if (!Guard(text.value.has_value(), brawlers::ui::ReadErrorName(text.error)) ||
+      text.value->empty()) return;
+  if (text_scope == TextScope::AttributeHints) attribute.screen.hints = *text.value;
+  else attribute.screen.text.emplace(id, *text.value);
+  EmitAttribute(attribute);
+}
+
+bool CreatorScope(TextScope scope) {
+  return scope == TextScope::CreatorLabel || scope == TextScope::CreatorMarker ||
+         scope == TextScope::CreatorHints || scope == TextScope::CreatorCommonHints;
+}
+
+void EmitCreator(Creator& creator) {
+  auto& screen = creator.screen;
+  if (!screen.active || !screen.verified) return;
+  if (!screen.opened) {
+    Output().Enqueue(Event("creator", "opened", screen));
+    screen.opened = true;
+  }
+  const bool button = screen.selection == 8;
+  if ((!button && creator.label.empty()) || !creator.marker_checked ||
+      (button && !screen.locale)) return;
+  const bool hints_ready = creator.hints.contains(0x9EC) && creator.hints.contains(0xA23) &&
+                           (creator.mode != 0 || creator.category >= 0 ||
+                            creator.hints.contains(0x94A));
+  const auto fingerprint = std::to_string(creator.category) + ":" +
+                           std::to_string(screen.selection) + ":" + creator.marker;
+  if (screen.last_item == fingerprint && !screen.resume &&
+      (screen.hints_sent || !hints_ready)) return;
+  auto event = Event("creator", screen.resume ? "resumed" : "focused", screen);
+  if (button) event.label_key = "popup_ok";
+  else event.label = creator.label;
+  event.selected = !creator.marker.empty();
+  if (creator.category >= 0)
+    event.description_key = "creator_" + std::to_string(creator.category) + "_" +
+                            std::to_string(screen.selection);
+  event.position = button ? creator.count + 1 : screen.selection + 1;
+  event.total = creator.count + (creator.category < 0 ? 1 : 0);
+  if (hints_ready && !screen.hints_sent) {
+    event.hints.push_back(creator.hints.at(0x9EC));
+    if (creator.mode == 0 && creator.category < 0)
+      event.hints.push_back(creator.hints.at(0x94A));
+    event.hints.push_back(creator.hints.at(0xA23));
+  }
+  Output().Enqueue(std::move(event));
+  screen.last_item = fingerprint;
+  screen.resume = false;
+  screen.hints_sent = screen.hints_sent || hints_ready;
+}
+
+void CreatorSelection(Creator& creator, uint32_t selected) {
+  auto& screen = creator.screen;
+  screen.verified = false;
+  creator.expected_text = 0;
+  creator.label.clear();
+  creator.marker.clear();
+  creator.marker_checked = false;
+  if (!creator.configured || !Guard(selected < creator.count ||
+      (creator.category < 0 && selected == 8), "creator_enabled_selection")) return;
+  screen.selection = selected;
+  if (selected == 8) {
+    creator.marker_checked = true;
+  } else {
+    uint32_t address;
+    if (creator.category < 0) {
+      const auto table = memory.U32BE(0x829A2004 + creator.mode * 4);
+      const uint32_t expected = creator.mode == 0 ? 0x82019458 : 0x82019460;
+      if (!Guard(table == expected, "creator_root_category_table")) return;
+      const auto category = memory.U8(*table + selected);
+      if (!Guard(category.has_value() && *category < 24, "creator_root_category")) return;
+      address = 0x820194FC + *category * 2;
+    } else {
+      address = 0x82019530 + (static_cast<uint32_t>(creator.category) * 8 + selected) * 2;
+    }
+    const auto id = memory.U16BE(address);
+    if (!Guard(id.has_value() && *id != 0xFFFF, "creator_selected_text_id")) return;
+    creator.expected_text = *id;
+  }
+  screen.verified = true;
+  EmitCreator(creator);
+}
+
+void ConfigureCreator(uint32_t owner) {
+  const auto found = creators.find(owner);
+  if (found == creators.end()) return;
+  auto& creator = found->second;
+  creator.configured = false;
+  creator.screen.verified = false;
+  creator.screen.active = false;
+  creator.transition = 0;
+  if (!Object(owner, 0x820196BC, "creator_configure_owner")) return;
+  const auto category = memory.U32BE(owner + 0x9C), mode = memory.U32BE(owner + 0x2C);
+  if (!Guard(mode.has_value() && *mode <= 1 && category.has_value() &&
+      (*category == UINT32_MAX || *category < 24), "creator_category_mode")) return;
+  creator.mode = *mode;
+  creator.category = static_cast<int32_t>(*category);
+  const auto count = memory.U8(creator.category < 0 ? 0x82019468 + *mode :
+                              0x820194B4 + *category);
+  if (!Guard(count.has_value() && *count > 0 && *count <= 8, "creator_option_count")) return;
+  creator.count = *count;
+  const auto nested = memory.U32BE(owner + 0xE0);
+  if (!Object(owner + 0xB8, 0x8200FC30, "creator_selector_table") ||
+      !Guard(nested == owner + 0xF8, "creator_selector_nested") ||
+      !Object(*nested, 0x8200FC10, "creator_nested_table") ||
+      !Guard(memory.U32BE(*nested + 0x14) == 9, "creator_selector_capacity")) return;
+  const auto enabled = memory.U32BE(*nested + 8), selected = memory.U32BE(*nested + 0x10);
+  if (!Guard(enabled.has_value() && *enabled && *enabled <= UINT32_MAX - 9 &&
+      selected.has_value(), "creator_selector_storage")) return;
+  for (uint32_t row = 0; row < 9; ++row) {
+    const uint8_t expected = row == 8 ? creator.category < 0 : row < creator.count;
+    if (!Guard(memory.U8(*enabled + row) == expected, "creator_enabled_rows")) return;
+  }
+  creator.configured = true;
+  creator.screen.resume = creator.screen.opened;
+  CreatorSelection(creator, *selected);
+}
+
+void CreatorReady(Creator& creator) {
+  const bool active = creator.state == 3 && creator.transition == 1 && creator.configured;
+  if (active && !creator.screen.active && creator.screen.opened) creator.screen.resume = true;
+  creator.screen.active = active;
+  if (active) EmitCreator(creator);
+}
+
+void CloseCreator(uint32_t owner) {
+  const auto found = creators.find(owner);
+  if (found == creators.end()) return;
+  if (found->second.screen.opened)
+    Output().Enqueue(Event("creator", "closed", found->second.screen));
+  creators.erase(found);
+}
+
+uint32_t CreatorTextOwner(uint32_t record) {
+  for (const uint32_t offset : {0x34U, 0x68U}) {
+    const auto found = record >= offset ? creators.find(record - offset) : creators.end();
+    if (found == creators.end()) continue;
+    const auto& creator = found->second;
+    if (!creator.screen.active || !creator.screen.verified) return 0;
+    if (text_scope == TextScope::CreatorLabel &&
+        (creator.screen.selection == 8 || !creator.label.empty())) return 0;
+    if (text_scope == TextScope::CreatorMarker && creator.marker_checked) return 0;
+    if (text_scope == TextScope::CreatorHints && creator.hints.contains(0xA23) &&
+        (creator.mode != 0 || creator.hints.contains(0x94A))) return 0;
+    return found->first;
+  }
+  return 0;
+}
+
+void CaptureCreatorText(uint32_t pointer) {
+  const auto found = creators.find(text_owner);
+  if (found == creators.end()) return;
+  auto& creator = found->second;
+  const auto hint_id = text_scope == TextScope::CreatorCommonHints ? 0x9EC : creator_hint_id;
+  if ((text_scope == TextScope::CreatorHints || text_scope == TextScope::CreatorCommonHints) &&
+      creator.hints.contains(hint_id)) return;
+  const auto text = memory.Text(pointer);
+  if (!Guard(text.value.has_value(), brawlers::ui::ReadErrorName(text.error))) return;
+  if (text.value->empty()) return;
+  if (text_scope == TextScope::CreatorLabel) creator.label = *text.value;
+  else if (text_scope == TextScope::CreatorMarker) {
+    creator.marker = *text.value;
+    creator.marker_checked = true;
+  }
+  else creator.hints.emplace(hint_id, *text.value);
+  EmitCreator(creator);
+}
+
 void EmitPopup(Screen& screen) {
   if (!screen.active || screen.body.empty())
     return;
   if (!screen.opened) {
-    auto event = Event("popup", "opened", screen);
+    auto event = Event(screen.total ? "popup" : "status", "opened", screen);
     event.body = screen.body;
     Output().Enqueue(std::move(event));
     screen.opened = true;
@@ -357,14 +667,24 @@ void CloseScreen(std::map<uint32_t, Screen>& screens, uint32_t owner, const char
   screens.erase(found);
 }
 
+void ClosePopup(uint32_t owner) {
+  const auto found = popups.find(owner);
+  if (found != popups.end())
+    CloseScreen(popups, owner, found->second.total ? "popup" : "status");
+}
+
 uint32_t TextOwner(TextScope scope, uint32_t record) {
   if (!record)
     return 0;
+  if (CreatorScope(scope)) return CreatorTextOwner(record);
+  if (AttributeScope(scope)) return AttributeTextOwner(scope, record);
   if (scope == TextScope::PopupBody) {
     const auto found = record >= 0x74 ? popups.find(record - 0x74) : popups.end();
     return found != popups.end() && found->second.body.empty() ? found->first : 0;
   }
   if (scope == TextScope::MenuHints) {
+    for (const auto& [owner, screen] : popups)
+      if (screen.active && !screen.total) return 0;
     for (auto& [owner, screen] : popups) {
       if (screen.active && screen.text_root &&
           record == screen.text_root + 0x94) {
@@ -380,6 +700,22 @@ uint32_t TextOwner(TextScope scope, uint32_t record) {
       }
     }
     if (!popups.empty() || !saves.empty()) return 0;
+    for (auto& [owner, creator] : creators) {
+      if (creator.screen.active && creator.screen.text_root &&
+          record == creator.screen.text_root + 0x94) {
+        text_scope = TextScope::CreatorCommonHints;
+        return creator.hints.contains(0x9EC) ? 0 : owner;
+      }
+    }
+    if (!creators.empty()) return 0;
+    for (auto& [owner, attribute] : attributes) {
+      if (attribute.screen.active && attribute.screen.text_root &&
+          record == attribute.screen.text_root + 0x94) {
+        text_scope = TextScope::AttributeHints;
+        return attribute.screen.hints.empty() ? owner : 0;
+      }
+    }
+    if (!attributes.empty()) return 0;
   }
   if (scope == TextScope::TitlePrompt) {
     const auto found = record >= 0x20 ? titles.find(record - 0x20) : titles.end();
@@ -437,6 +773,14 @@ uint32_t SaveTextOwner(uint32_t widget, TextScope scope) {
 }
 
 void CaptureDrawText(uint32_t pointer) {
+  if (AttributeScope(text_scope)) {
+    CaptureAttributeText(pointer);
+    return;
+  }
+  if (CreatorScope(text_scope)) {
+    CaptureCreatorText(pointer);
+    return;
+  }
   auto* screens = text_scope == TextScope::PopupBody || text_scope == TextScope::PopupHints
                   ? &popups : &saves;
   const auto found = screens->find(text_owner);
@@ -610,9 +954,11 @@ extern "C" void sub_823B87A8(PPCContext& ctx, uint8_t* base) {
   Observe([&] {
     CloseScreen(menus, owner, "menu");
     CloseScreen(titles, owner, "title");
-    CloseScreen(popups, owner, "popup");
+    ClosePopup(owner);
     CloseScreen(saves, owner, "save");
     RemoveSaveWidgets(owner);
+    CloseCreator(owner);
+    CloseAttribute(owner);
   });
 }
 
@@ -824,6 +1170,16 @@ void BrawlersTextRecord(PPCRegister& record) {
 
 void BrawlersNativeSelectionChanged(PPCRegister& selector, PPCRegister& selected) {
   Observe([&] {
+    const auto attribute = selector.u32 >= 0x48 ? attributes.find(selector.u32 - 0x48) : attributes.end();
+    if (attribute != attributes.end()) {
+      AttributeSelection(attribute->second, selected.u32);
+      return;
+    }
+    const auto creator = selector.u32 >= 0xB8 ? creators.find(selector.u32 - 0xB8) : creators.end();
+    if (creator != creators.end()) {
+      CreatorSelection(creator->second, selected.u32);
+      return;
+    }
     if (selector.u32 >= 0x18) {
       const auto popup = popups.find(selector.u32 - 0x18);
       if (popup != popups.end()) {
@@ -850,7 +1206,8 @@ void BrawlersPopupStateChanged(PPCRegister& owner, PPCRegister& state) {
     if (found == popups.end()) return;
     auto& screen = found->second;
     screen.active = state.u32 == 2 && Guard(
-        memory.U32BE(owner.u32) == (screen.total == 1 ? 0x82003C90 : 0x82003C80),
+        memory.U32BE(owner.u32) == (screen.total == 0 ? 0x82003CB0 :
+                                    screen.total == 1 ? 0x82003C90 : 0x82003C80),
         "popup_active_table");
     if (screen.active) EmitPopup(screen);
   });
@@ -939,20 +1296,20 @@ extern "C" void sub_821DFBE8(PPCContext& ctx, uint8_t* base) {
   const auto bank = ctx.r6.u32, body = ctx.r7.u32;
   __imp__sub_821DFBE8(ctx, base);
   Observe([&] {
-    if (kind > 1) return;
+    if (kind > 2) return;
     NewScreen(popups, owner, 0x82003C70, "popup_constructor");
     const auto found = popups.find(owner);
     if (found == popups.end()) return;
-    found->second.total = kind == 0 ? 2 : 1;
+    found->second.total = kind == 0 ? 2 : kind == 1 ? 1 : 0;
     found->second.bank = bank;
     found->second.description_id = body;
-    CommonResource(found->second);
+    if (found->second.total) CommonResource(found->second);
   });
 }
 
 extern "C" void sub_821DF478(PPCContext& ctx, uint8_t* base) {
   const auto owner = ctx.r3.u32;
-  Observe([&] { CloseScreen(popups, owner, "popup"); });
+  Observe([&] { ClosePopup(owner); });
   __imp__sub_821DF478(ctx, base);
 }
 
@@ -965,7 +1322,8 @@ extern "C" void sub_823A9528(PPCContext& ctx, uint8_t* base) {
   const auto pointer = ctx.r4.u32;
   if (text_owner && ((text_scope == TextScope::SaveName && ctx.lr == 0x822D61C8) ||
       (text_scope != TextScope::SaveName && ctx.lr == 0x823A9A24) ||
-      ((text_scope == TextScope::SaveHints || text_scope == TextScope::PopupHints) &&
+      ((text_scope == TextScope::SaveHints || text_scope == TextScope::PopupHints ||
+        text_scope == TextScope::CreatorCommonHints || text_scope == TextScope::AttributeHints) &&
        ctx.lr == 0x821EACD8)))
     Observe([&] { CaptureDrawText(pointer); });
   __imp__sub_823A9528(ctx, base);
@@ -992,16 +1350,40 @@ extern "C" void sub_823A9908(PPCContext& ctx, uint8_t* base) {
       }
       case TextScope::SaveHints: accepted = bank == 0 && (id == 0x9F6 || id == 0x9D6); break;
       case TextScope::PopupHints: accepted = bank == 0 && id == 0xA16; break;
+      case TextScope::CreatorLabel: {
+        const auto creator = creators.find(text_owner);
+        accepted = creator != creators.end() && bank == 0 &&
+                   id == creator->second.expected_text;
+        break;
+      }
+      case TextScope::CreatorMarker: accepted = bank == 0 && id == 0x927; break;
+      case TextScope::CreatorHints: {
+        const auto creator = creators.find(text_owner);
+        accepted = creator != creators.end() && bank == 0 && (id == 0xA23 ||
+            (id == 0x94A && creator->second.mode == 0 && creator->second.category < 0));
+        break;
+      }
+      case TextScope::CreatorCommonHints: accepted = bank == 0 && id == 0x9EC; break;
+      case TextScope::AttributeTitle: accepted = bank == 0 && id == 0x6B9; break;
+      case TextScope::AttributeInstruction: accepted = bank == 0 && id == 0x96A; break;
+      case TextScope::AttributeHints: accepted = bank == 0 && id == 0x9EC; break;
       default: break;
     }
   });
   ScopedText scope(text_scope, accepted ? text_owner : 0);
+  struct HintId {
+    uint32_t previous = creator_hint_id;
+    explicit HintId(uint32_t id) { creator_hint_id = id; }
+    ~HintId() { creator_hint_id = previous; }
+  } hint(id);
   __imp__sub_823A9908(ctx, base);
 }
 
 extern "C" void sub_823A9A38(PPCContext& ctx, uint8_t* base) {
   const auto pointer = ctx.r4.u32;
-  if (text_owner && (text_scope == TextScope::SaveHints || text_scope == TextScope::PopupHints) &&
+  if (text_owner && (text_scope == TextScope::SaveHints || text_scope == TextScope::PopupHints ||
+                    text_scope == TextScope::CreatorCommonHints ||
+                    text_scope == TextScope::AttributeHints) &&
       (ctx.lr == 0x823AA75C || ctx.lr == 0x823AA2B0))
     Observe([&] { CaptureDrawText(pointer); });
   __imp__sub_823A9A38(ctx, base);
@@ -1018,5 +1400,112 @@ extern "C" void sub_821DF130(PPCContext& ctx, uint8_t* base) {
     else if (save != saves.end()) screen = &save->second;
     if (screen) screen->verified = Guard(lower == 0 && upper == screen->total,
                                          "native_list_bounds");
+  });
+}
+
+extern "C" void sub_82349F58(PPCContext& ctx, uint8_t* base) {
+  const auto owner = ctx.r3.u32;
+  __imp__sub_82349F58(ctx, base);
+  Observe([&] {
+    if (!Object(owner, 0x8201A8D0, "attribute_constructor") ||
+        !Guard(owner <= UINT32_MAX - 0x3E51, "attribute_object_range") ||
+        !Guard(!attributes.contains(owner), "duplicate_attribute_lifetime")) return;
+    AttributeMenu attribute;
+    attribute.screen.id = ++next_identity;
+    attributes.emplace(owner, std::move(attribute));
+  });
+}
+
+extern "C" void sub_82348548(PPCContext& ctx, uint8_t* base) {
+  const auto owner = ctx.r3.u32;
+  Observe([&] { CloseAttribute(owner); });
+  __imp__sub_82348548(ctx, base);
+}
+
+extern "C" void sub_8234A890(PPCContext& ctx, uint8_t* base) {
+  ScopedText scope(TextScope::AttributeTitle);
+  __imp__sub_8234A890(ctx, base);
+}
+
+extern "C" void sub_8234C0D0(PPCContext& ctx, uint8_t* base) {
+  ScopedText scope(TextScope::AttributeInstruction);
+  __imp__sub_8234C0D0(ctx, base);
+}
+
+void BrawlersAttributeStateChanged(PPCRegister& owner, PPCRegister& state) {
+  Observe([&] {
+    const auto found = attributes.find(owner.u32);
+    if (found == attributes.end()) return;
+    if (state.u32 == 7) {
+      if (!found->second.screen.active) ActivateAttribute(owner.u32, found->second);
+    } else {
+      found->second.screen.active = false;
+      Guard(state.u32 == 8, "attribute_state_event");
+    }
+  });
+}
+
+extern "C" void sub_8232C3E0(PPCContext& ctx, uint8_t* base) {
+  const auto owner = ctx.r3.u32;
+  __imp__sub_8232C3E0(ctx, base);
+  Observe([&] {
+    if (!Object(owner, 0x820196BC, "creator_constructor") ||
+        !Guard(owner <= UINT32_MAX - 0x870, "creator_object_range") ||
+        !Guard(!creators.contains(owner), "duplicate_creator_lifetime")) return;
+    Creator creator;
+    creator.screen.id = ++next_identity;
+    CommonResource(creator.screen);
+    creators.emplace(owner, std::move(creator));
+  });
+}
+
+extern "C" void sub_8232BB28(PPCContext& ctx, uint8_t* base) {
+  const auto owner = ctx.r3.u32;
+  Observe([&] { CloseCreator(owner); });
+  __imp__sub_8232BB28(ctx, base);
+}
+
+extern "C" void sub_8232BC00(PPCContext& ctx, uint8_t* base) {
+  const auto owner = ctx.r3.u32;
+  __imp__sub_8232BC00(ctx, base);
+  Observe([&] { ConfigureCreator(owner); });
+}
+
+void BrawlersCreatorStateChanged(PPCRegister& owner, PPCRegister& state) {
+  Observe([&] {
+    const auto found = creators.find(owner.u32);
+    if (found == creators.end()) return;
+    auto& creator = found->second;
+    creator.state = state.u32;
+    CreatorReady(creator);
+  });
+}
+
+void BrawlersCreatorTransitionChanged(PPCRegister& owner, PPCRegister& transition) {
+  Observe([&] {
+    const auto found = creators.find(owner.u32);
+    if (found == creators.end()) return;
+    found->second.transition = transition.u32;
+    CreatorReady(found->second);
+  });
+}
+
+#define CREATOR_DRAW(address, field) \
+  extern "C" void sub_##address(PPCContext& ctx, uint8_t* base) { \
+    ScopedText scope(TextScope::field); \
+    __imp__sub_##address(ctx, base); \
+  }
+CREATOR_DRAW(8232EB88, CreatorLabel)
+CREATOR_DRAW(8232E448, CreatorHints)
+CREATOR_DRAW(8232E830, CreatorMarker)
+#undef CREATOR_DRAW
+
+void BrawlersCreatorMarkerAbsent(PPCRegister&) {
+  if (text_scope != TextScope::CreatorMarker) return;
+  Observe([&] {
+    const auto found = creators.find(text_owner);
+    if (found == creators.end()) return;
+    found->second.marker_checked = true;
+    EmitCreator(found->second);
   });
 }

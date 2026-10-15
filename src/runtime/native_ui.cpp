@@ -13,9 +13,11 @@ bool SendScreenEvent(const ScreenEvent& event) noexcept {
     const nlohmann::json message = {
         {"source", event.source}, {"kind", event.kind}, {"id", event.id},
         {"title", event.title}, {"body", event.body}, {"section", event.section},
-        {"label", event.label}, {"description", event.description}, {"hints", event.hints},
+        {"label", event.label}, {"value", event.value},
+        {"description", event.description}, {"description_key", event.description_key},
+        {"hints", event.hints},
         {"title_key", event.title_key}, {"label_key", event.label_key}, {"locale", event.locale},
-        {"position", event.position}, {"total", event.total}};
+        {"position", event.position}, {"total", event.total}, {"selected", event.selected}};
     const auto encoded = message.dump();
     return std::fprintf(stderr, "BRAWLERS_SCREEN:%s\n", encoded.c_str()) >= 0;
   } catch (...) {

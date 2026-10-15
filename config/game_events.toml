@@ -2,6 +2,18 @@
 # No instruction is replaced, skipped or permitted to mutate CPU registers.
 
 [[midasm_hook]]
+address = 0x821E0FE4
+name = "BrawlersPopupStateChanged"
+registers = ["r31", "r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x821E102C
+name = "BrawlersPopupStateChanged"
+registers = ["r31", "r10"]
+after_instruction = true
+
+[[midasm_hook]]
 address = 0x822CF970
 name = "BrawlersMainMenuStateChanged"
 registers = ["r31", "r9"]
@@ -287,4 +299,172 @@ after_instruction = true
 address = 0x824F774C
 name = "BrawlersMoviePictureCopied"
 registers = ["r31", "r11", "r8"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232D14C
+name = "BrawlersCreatorStateChanged"
+registers = ["r31", "r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232D190
+name = "BrawlersCreatorStateChanged"
+registers = ["r31", "r27"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232D1C8
+name = "BrawlersCreatorStateChanged"
+registers = ["r31", "r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232D220
+name = "BrawlersCreatorStateChanged"
+registers = ["r31", "r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232D3A4
+name = "BrawlersCreatorStateChanged"
+registers = ["r31", "r29"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232D3E4
+name = "BrawlersCreatorStateChanged"
+registers = ["r31", "r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232D438
+name = "BrawlersCreatorStateChanged"
+registers = ["r31", "r29"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232D484
+name = "BrawlersCreatorStateChanged"
+registers = ["r31", "r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232D4E0
+name = "BrawlersCreatorStateChanged"
+registers = ["r31", "r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232D4F4
+name = "BrawlersCreatorStateChanged"
+registers = ["r31", "r29"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232BD40
+name = "BrawlersCreatorStateChanged"
+registers = ["r31", "r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232CFE8
+name = "BrawlersCreatorTransitionChanged"
+registers = ["r3", "r28"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232D004
+name = "BrawlersCreatorTransitionChanged"
+registers = ["r31", "r29"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232D03C
+name = "BrawlersCreatorTransitionChanged"
+registers = ["r31", "r30"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232D044
+name = "BrawlersCreatorTransitionChanged"
+registers = ["r31", "r27"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232BDF8
+name = "BrawlersCreatorTransitionChanged"
+registers = ["r31", "r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232BD44
+name = "BrawlersCreatorTransitionChanged"
+registers = ["r31", "r9"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232D3D4
+name = "BrawlersCreatorTransitionChanged"
+registers = ["r31", "r29"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232D434
+name = "BrawlersCreatorTransitionChanged"
+registers = ["r31", "r29"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232EBC8
+name = "BrawlersTextRecord"
+registers = ["r6"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232E480
+name = "BrawlersTextRecord"
+registers = ["r30"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232E86C
+name = "BrawlersTextRecord"
+registers = ["r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8232EA70
+name = "BrawlersCreatorMarkerAbsent"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82349B24
+name = "BrawlersAttributeStateChanged"
+registers = ["r31", "r11"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82349B8C
+name = "BrawlersAttributeStateChanged"
+registers = ["r31", "r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82349C7C
+name = "BrawlersAttributeStateChanged"
+registers = ["r31", "r10"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8234A8E4
+name = "BrawlersTextRecord"
+registers = ["r6"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8234C124
+name = "BrawlersTextRecord"
+registers = ["r6"]
 after_instruction = true

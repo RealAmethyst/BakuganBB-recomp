@@ -17,6 +17,7 @@ These records preserve the investigation sequence. Dated earlier conclusions may
 - [Diagnostic integration and build identities](diagnostic-launch.md).
 - [First launch failure](first-launch-failure.md) and [timing contracts](timing-contracts.md).
 - [Story entry and name input](story-entry-freeze.md).
+- [Character creation and attribute selection](character-creation.md).
 - [Localization, menus, popups and logo events](localization-consumers.md).
 - [Pinned SDK patches](../patches/rexglue/README.md) and [Prism speech-library patch](../patches/prism/README.md).
 
