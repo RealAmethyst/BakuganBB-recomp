@@ -11,6 +11,14 @@ These original integration sources accompany a private statically recompiled bui
 - `native_game_ui.cpp` and `game_events.toml`: observe verified menu/title/save-picker/popup and creator transitions, native text consumers and readable startup movie pictures at successful submission. Include the TOML in the pinned private codegen configuration; compile the adapter with its generated hook calls. Constructor/removal wrappers preserve native lifetime. [Localization research](localization-consumers.md) and [character creation](character-creation.md) record the original behavior and exact contracts.
 - `native_localization.h`: game-specific, event-time lookup of verified plain-text attribute captions. It validates the provider and resource structure and bounds each string by its following offset. It does not call guest code or scan for text.
 - `native_battle_speech.cpp` and `native_versus_speech.cpp`: selected cards/Bakugan and mode-two prebattle portrait identities, using verified native lifetimes and the same event queue. [Battle speech](battle-speech.md) records exact ownership, text consumers and scope limits.
+- `native_vs_*.cpp`: main-menu VS setup, character/team selection, participant
+  decks, the nested deck editor and Bakugan detail viewer. Character and editor
+  presentation bridges keep captured native facts separate from speech policy.
+  Events retain controller identity; central resources describe verified
+  picture-only controls. The [VS setup record](versus-setup.md) documents the
+  hooks, offline verification and remaining card-art text limitation. Listening
+  feedback confirms speech in the tested flow; exhaustive controller and route
+  coverage remain unconfirmed.
 - `native_gate_audio.cpp`, `spatial_audio.cpp` and `spatial_audio_runtime.cpp`: verified camera/card snapshots, stable loop identities and the optional Steam Audio/SDL output. [Battle-field evidence](battle-field.md) and the [audio record](accessibility-audio.md) separate native facts, approved behavior and offline checks.
 - `guest_ui_memory.h` and `game_speech_queue.cpp`: strict bounded text copying and value-only FIFO output outside guest/runtime locks. Requires the guarded-read SDK patch. Mapping safety does not establish game-object ownership; semantic hooks supply that context.
 - `launch.py`: Linux process supervisor, explicit runtime paths, exclusive launch lock and private logs. It runs the game only through its main entrypoint, never when imported.

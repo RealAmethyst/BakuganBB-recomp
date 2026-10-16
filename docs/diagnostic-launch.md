@@ -8,9 +8,39 @@ Prepare a private, user-controlled diagnostic launch. The native executable rema
 
 The accessibility designer selected automatic startup/failure speech through Prism, with standalone text-to-speech backends disabled. Speech targets a running screen reader; absence of one should be silent. In particular, direct Speech Dispatcher and SAPI output are excluded. Diagnostic wording lives in `resources/messages.en.json`. Later game-content narration is recorded below separately from the initial milestone.
 
+## VS setup accessibility test build
+
+Current private build: `diagnostic-20261016.1`, with the accepted settings build
+`diagnostic-20261015.5` backed up. It connects speech for player options,
+character/team selection, rules, arena selection, participant decks, the nested
+deck editor and Bakugan detail viewer. It announces all controllers with
+controller identification and includes approved picture-control descriptions.
+The [VS setup record](versus-setup.md) owns the native evidence and exact limits.
+
+Both native build configurations pass, with and without Steam Audio. Nine
+source-check groups and nine isolated ASan/UBSan VS fixtures pass; event
+serialization also passes. Fresh generation and linked-symbol checks verify the
+configured observer calls and original wrapper forwarding. No game execution or
+listening confirmation is implied by these offline checks.
+
+Installed host SHA-256:
+`871f6e4b75dcfce12c3cefeaedc71214fca8494382d0751418162340c564d991`.
+Runtime and GPU libraries retain their accepted settings-build hashes. Deployment
+verified the launch lock, absence of an installed game process, previous and new
+manifest digests, native dependencies and isolated check-only preflight. Private
+collection `versus-menu-20261015` retains the build, fixture and deployment
+evidence and backup. No game or live accessibility service was started or changed.
+
+Listening feedback on 2026-10-16 confirms that VS menu speech works in the
+tested flow. The report does not enumerate individual screens or controllers;
+exhaustive route and regression coverage remain unconfirmed. Card effect wording
+embedded in compressed artwork remains unverified and is not announced by this
+route. Launch normally to use the new build; no system or screen-reader restart
+is required. Source integration is tracked by [issue 36](https://github.com/RealAmethyst/bb-recomp/issues/36).
+
 ## Battle accessibility test build
 
-Current private build: `diagnostic-20261015.1`, with `diagnostic-20261014.9`
+Earlier private build: `diagnostic-20261015.1`, with `diagnostic-20261014.9`
 backed up. It adds the approved slower gate-card loops through Steam Audio,
 following camera position/facing while the field is visible and stopping on
 the verified native pause path. Gate-card selection speaks localized names,

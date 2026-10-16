@@ -1,5 +1,6 @@
 // Original synthetic lifecycle fixtures; no translated game code is executed.
 #include "native_game_ui.h"
+#include "native_settings_render.h"
 #include "native_speech.h"
 
 #include <cassert>
@@ -70,6 +71,18 @@ void BrawlersCreatorStateChanged(PPCRegister&, PPCRegister&);
 void BrawlersCreatorTransitionChanged(PPCRegister&, PPCRegister&);
 void BrawlersCreatorMarkerAbsent(PPCRegister&);
 void BrawlersAttributeStateChanged(PPCRegister&, PPCRegister&);
+
+// VS adapters have their own fixtures; preserve the shared selector boundary.
+void NotifyVsModeSelection(uint32_t, uint32_t) noexcept {}
+void NotifyVsRulesSelection(uint32_t, uint32_t) noexcept {}
+void NotifyVsCharactersSelection(uint32_t, uint32_t) noexcept {}
+void NotifyVsDecksSelection(uint32_t, uint32_t) noexcept {}
+void NotifyVsEditorSelection(uint32_t, uint32_t) noexcept {}
+namespace brawlers::settings {
+bool NativeSettingsRenderText(PPCContext&, uint8_t*) { return false; }
+bool NativeSettingsRenderHints(PPCContext&, uint8_t*) { return false; }
+void NativeSettingsRenderProvider(PPCContext&, uint32_t, uint32_t, uint64_t) {}
+}
 
 // Use the actual recursive-lock contract without initializing runtime services.
 std::recursive_mutex& rex::thread::global_critical_region::mutex() {

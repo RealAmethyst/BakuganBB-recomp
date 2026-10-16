@@ -4,6 +4,11 @@
 #include <string>
 #include <vector>
 
+struct ScreenTextArgument {
+  std::string text;
+  std::string key;
+};
+
 struct ScreenEvent {
   std::string source;
   std::string kind;
@@ -16,7 +21,13 @@ struct ScreenEvent {
   std::string description;
   std::string description_key;
   std::string title_key;
+  std::string section_key;
   std::string label_key;
+  std::string value_key;
+  std::string label_template;
+  std::vector<ScreenTextArgument> label_arguments;
+  uint32_t controller = UINT32_MAX;
+  bool continuation = false;
   uint32_t locale = 0;
   std::vector<std::string> hints;
   uint32_t position = 0;

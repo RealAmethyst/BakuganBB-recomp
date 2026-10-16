@@ -121,6 +121,8 @@ int main() {
   Fixture empty;
   empty.Unit(0x3040, 0);
   empty.Reject("text_empty");
+  assert(ReadMenuText(empty.Reader(), 0, true).value == "");
+  assert(!ReadMenuText(inaccessible.Reader(), 0, true).value);
   Fixture surrogate;
   surrogate.Unit(0x3040, 0xDC00);
   surrogate.Reject("text_read");

@@ -14,6 +14,15 @@
 #include "native_game_ui.h"
 #include "native_battle_speech.h"
 #include "native_versus_speech.h"
+#include "native_vs_mode.h"
+#include "native_vs_rules.h"
+#include "native_vs_arena.h"
+#include "native_vs_viewer.h"
+#include "native_vs_characters.h"
+#include "native_vs_characters_speech.h"
+#include "native_vs_decks.h"
+#include "native_vs_editor.h"
+#include "native_vs_editor_speech.h"
 #include "native_settings.h"
 #include "settings_runtime.h"
 #ifdef BRAWLERS_SPATIAL_AUDIO
@@ -109,9 +118,30 @@ class BattleBrawlersHost final : public rex::ReXApp {
     SetGameSpeechReader(reader);
     SetBattleSpeechCapture(reader, QueueGameEvent, QueueGameDiagnostic, FailGameCapture);
     SetVersusSpeechCapture(reader, QueueGameEvent, QueueGameDiagnostic, FailGameCapture);
+    const auto single_controller = [](ScreenEvent&& event) {
+      if (event.kind == "focused" || event.kind == "resumed") event.controller = 0;
+      QueueGameEvent(std::move(event));
+    };
+    SetVsModeCapture(reader, single_controller, QueueGameDiagnostic, FailGameCapture);
+    SetVsRulesCapture(reader, single_controller, QueueGameDiagnostic, FailGameCapture);
+    SetVsArenaCapture(reader, single_controller, QueueGameDiagnostic, FailGameCapture);
+    SetVsViewerCapture(reader, QueueGameEvent, QueueGameDiagnostic, FailGameCapture);
+    SetVsCharactersSpeech(reader, QueueGameEvent, QueueGameDiagnostic, FailGameCapture);
+    SetVsDecksCapture(reader, [](uint32_t controller, ScreenEvent&& event) {
+      if (event.kind == "focused" || event.kind == "resumed") event.controller = controller;
+      QueueGameEvent(std::move(event));
+    }, QueueGameDiagnostic, FailGameCapture);
+    SetVsEditorSpeech(reader, QueueGameEvent, QueueGameDiagnostic, FailGameCapture);
     SetGameTaskRemovedObserver([](uint32_t owner) noexcept {
       NotifyBattleTaskRemoved(owner);
       NotifyVersusTaskRemoved(owner);
+      NotifyVsModeTaskRemoved(owner);
+      NotifyVsRulesTaskRemoved(owner);
+      NotifyVsArenaTaskRemoved(owner);
+      NotifyVsViewerTaskRemoved(owner);
+      NotifyVsCharactersTaskRemoved(owner);
+      NotifyVsDecksTaskRemoved(owner);
+      NotifyVsEditorTaskRemoved(owner);
     });
 #ifdef BRAWLERS_SPATIAL_AUDIO
     using brawlers::audio::SpatialAudioRuntime;
