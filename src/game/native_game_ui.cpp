@@ -5,6 +5,11 @@
 #include "game_speech_queue.h"
 #include "native_localization.h"
 #include "native_settings_render.h"
+#include "native_vs_mode.h"
+#include "native_vs_rules.h"
+#include "native_vs_characters.h"
+#include "native_vs_decks.h"
+#include "native_vs_editor.h"
 
 #include <cfenv>
 #include <cstdio>
@@ -1188,6 +1193,11 @@ void BrawlersTextRecord(PPCRegister& record) {
 }
 
 void BrawlersNativeSelectionChanged(PPCRegister& selector, PPCRegister& selected) {
+  NotifyVsModeSelection(selector.u32, selected.u32);
+  NotifyVsRulesSelection(selector.u32, selected.u32);
+  NotifyVsCharactersSelection(selector.u32, selected.u32);
+  NotifyVsDecksSelection(selector.u32, selected.u32);
+  NotifyVsEditorSelection(selector.u32, selected.u32);
   Observe([&] {
     const auto attribute = selector.u32 >= 0x48 ? attributes.find(selector.u32 - 0x48) : attributes.end();
     if (attribute != attributes.end()) {

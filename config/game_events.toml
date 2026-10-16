@@ -531,3 +531,415 @@ address = 0x8234C124
 name = "BrawlersTextRecord"
 registers = ["r6"]
 after_instruction = true
+
+# Main-menu VS setup: verified native transitions and settled selection changes.
+
+[[midasm_hook]]
+address = 0x822F5528
+name = "BrawlersVsArenaReady"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F559C
+name = "BrawlersVsArenaSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F55EC
+name = "BrawlersVsArenaSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F5640
+name = "BrawlersVsArenaSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F5694
+name = "BrawlersVsArenaSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F58AC
+name = "BrawlersVsArenaNavigationChanged"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F577C
+name = "BrawlersVsArenaValueChanged"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F5850
+name = "BrawlersVsArenaValueChanged"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F5908
+name = "BrawlersVsArenaUpdateFinished"
+registers = ["r31"]
+after_instruction = false
+
+[[midasm_hook]]
+address = 0x822F59BC
+name = "BrawlersVsArenaUpdateFinished"
+registers = ["r31"]
+after_instruction = false
+
+[[midasm_hook]]
+address = 0x822F8EEC
+name = "BrawlersVsModeReady"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F7F88
+name = "BrawlersVsModeSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F7D70
+name = "BrawlersVsModeSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F801C
+name = "BrawlersVsModeSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F8114
+name = "BrawlersVsModeSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F8128
+name = "BrawlersVsModeSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F8594
+name = "BrawlersVsModeSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F8450
+name = "BrawlersVsModeResumed"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F7CF8
+name = "BrawlersVsModeValueChanged"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F7E30
+name = "BrawlersVsModeValueChanged"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F7D18
+name = "BrawlersVsModeValueChanged"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F7F5C
+name = "BrawlersVsModeValueChanged"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F7EBC
+name = "BrawlersVsModeValueChanged"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8233A578
+name = "BrawlersVsRulesReady"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8233A5F0
+name = "BrawlersVsRulesSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8233A63C
+name = "BrawlersVsRulesSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8233AB28
+name = "BrawlersVsRulesLabelDraw"
+registers = ["r31"]
+after_instruction = false
+
+# Actual VS Bakugan viewer readiness and text consumers.
+
+[[midasm_hook]]
+address = 0x822DC528
+name = "BrawlersVsViewerReady"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822DC57C
+name = "BrawlersVsViewerSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822DCCE0
+name = "BrawlersVsViewerName"
+registers = ["r29", "r5"]
+after_instruction = false
+
+[[midasm_hook]]
+address = 0x822DCF34
+name = "BrawlersVsViewerDescription"
+registers = ["r29", "r5"]
+after_instruction = false
+
+# Participant deck-summary lifetime and displayed name consumer.
+
+[[midasm_hook]]
+address = 0x822F2350
+name = "BrawlersVsDecksReady"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F23CC
+name = "BrawlersVsDecksSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822F3428
+name = "BrawlersVsDecksNameDraw"
+registers = ["r31"]
+after_instruction = false
+
+# Character selection: final input state and actual caption readiness.
+
+[[midasm_hook]]
+address = 0x822EB098
+name = "BrawlersVsCharactersReady"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822EB13C
+name = "BrawlersVsCharactersSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822EB194
+name = "BrawlersVsCharactersSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822EB5C0
+name = "BrawlersVsCharactersSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822E8F40
+name = "BrawlersVsCharactersSuspended"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822EB4E8
+name = "BrawlersVsCharactersResumed"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822EB5A8
+name = "BrawlersVsCharactersResumed"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822E930C
+name = "BrawlersVsCharactersResumed"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822E9360
+name = "BrawlersVsCharactersResumed"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822E8B90
+name = "BrawlersVsCharactersChanged"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822E8E34
+name = "BrawlersVsCharactersChanged"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822E8CF4
+name = "BrawlersVsCharactersDifficultyChanged"
+registers = ["r31", "r25", "r19"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822E8D90
+name = "BrawlersVsCharactersDifficultyChanged"
+registers = ["r31", "r25", "r19"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822EEC9C
+name = "BrawlersVsCharactersRendered"
+registers = ["r30", "r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822EB30C
+name = "BrawlersVsCharactersTeamReady"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x822EFC28
+name = "BrawlersVsCharactersTeamRendered"
+registers = ["r30", "r31"]
+after_instruction = true
+
+# Nested VS deck editor and its owned picker/confirmation lifetimes.
+
+[[midasm_hook]]
+address = 0x82313320
+name = "BrawlersVsEditorReady"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82313604
+name = "BrawlersVsEditorReady"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82314570
+name = "BrawlersVsEditorReady"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x823145D8
+name = "BrawlersVsEditorReady"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x82314848
+name = "BrawlersVsEditorReady"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8231A2E4
+name = "BrawlersVsEditorCaption"
+registers = ["r31", "r30"]
+after_instruction = false
+
+[[midasm_hook]]
+address = 0x8231ABB8
+name = "BrawlersVsEditorHeader"
+registers = ["r31", "r29", "r4"]
+after_instruction = false
+
+[[midasm_hook]]
+address = 0x8231A840
+name = "BrawlersVsEditorHints"
+registers = ["r29", "r4"]
+after_instruction = false
+
+[[midasm_hook]]
+address = 0x82316720
+name = "BrawlersVsEditorStatus"
+registers = ["r31", "r25", "r5"]
+after_instruction = false
+
+[[midasm_hook]]
+address = 0x82304978
+name = "BrawlersVsEditorPickerReady"
+registers = ["r29"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x823047B8
+name = "BrawlersVsEditorPickerClosed"
+registers = ["r29"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8230AB14
+name = "BrawlersVsEditorPickerTitle"
+registers = ["r31", "r30"]
+after_instruction = false
+
+[[midasm_hook]]
+address = 0x823142E0
+name = "BrawlersVsEditorConfirmationReady"
+registers = ["r31"]
+after_instruction = true
+
+[[midasm_hook]]
+address = 0x8231B698
+name = "BrawlersVsEditorConfirmationPrompt"
+registers = ["r31", "r30"]
+after_instruction = false
+
+[[midasm_hook]]
+address = 0x8231BE40
+name = "BrawlersVsEditorConfirmationStatus"
+registers = ["r31", "r27", "r5"]
+after_instruction = false
+
+[[midasm_hook]]
+address = 0x8231B190
+name = "BrawlersVsEditorPreviewHint"
+registers = ["r31", "r29"]
+after_instruction = false
+
+[[midasm_hook]]
+address = 0x821EA9E4
+name = "BrawlersVsEditorFooter"
+registers = ["r31", "r24", "r29"]
+after_instruction = false

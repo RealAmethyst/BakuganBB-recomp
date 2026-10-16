@@ -109,6 +109,8 @@ int main() {
   creator.value = "Value \"é\"\nsecond line";
   creator.description = "Synthetic description";
   creator.description_key = "synthetic_shape";
+  creator.section_key = "synthetic_section";
+  creator.value_key = "synthetic_value";
   creator.selected = true;
   creator.position = 1;
   creator.total = 2;
@@ -132,6 +134,8 @@ int main() {
   assert(json.at("label") == "Synthetic setting");
   assert(json.at("description") == "Synthetic description");
   assert(json.at("description_key") == "synthetic_shape");
+  assert(json.at("section_key") == "synthetic_section");
+  assert(json.at("value_key") == "synthetic_value");
   assert(json.at("selected") == true);
   assert(json.at("position") == 1 && json.at("total") == 2);
   assert(std::fgets(line, sizeof(line), output));
@@ -143,6 +147,28 @@ int main() {
   assert(std::fgets(line, sizeof(line), output));
   assert(std::string(line) == "BRAWLERS_SCREEN:serialization failed\n");
   assert(!std::fgets(line, sizeof(line), output));
+  std::clearerr(output);
+  const auto final_offset = std::ftell(output);
+  ScreenEvent team;
+  team.source = "vs_characters";
+  team.kind = "resumed";
+  team.id = 45;
+  team.controller = 2;
+  team.continuation = true;
+  team.label_template = "synthetic_pair";
+  team.label_arguments = {{"Synthetic name", ""}, {"", "synthetic_identity"}};
+  team.position = 2;
+  team.total = 3;
+  assert(SendScreenEvent(team));
+  std::fflush(stderr);
+  assert(std::fseek(output, final_offset, SEEK_SET) == 0);
+  assert(std::fgets(line, sizeof(line), output));
+  json = nlohmann::json::parse(std::string(line).substr(16));
+  assert(json.at("controller") == 2 && json.at("label_template") == "synthetic_pair");
+  assert(json.at("continuation") == true && json.at("kind") == "resumed");
+  assert(json.at("label_arguments").size() == 2);
+  assert(json.at("label_arguments")[0].at("text") == "Synthetic name");
+  assert(json.at("label_arguments")[1].at("key") == "synthetic_identity");
   std::fclose(output);
   std::puts("Native UI JSON round trip, lifecycle fields and invalid UTF-8 checks passed.");
 }

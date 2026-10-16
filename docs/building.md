@@ -164,6 +164,16 @@ python3 tests/runtime/native_settings_lifecycle.py "$WORK/rexglue" \
 These fixtures use synthetic window, audio and guest-memory boundaries. They do
 not open a game window, load audio output or connect to accessibility services.
 
+The VS capture fixtures also use synthetic memory and isolated native boundaries:
+
+```sh
+python3 tests/runtime/native_vs_regressions.py "$WORK/rexglue" \
+  "$WORK/sdk-build" "$WORK/rexglue/thirdparty" "$WORK/vs-capture-checks"
+```
+
+They compile with AddressSanitizer and UndefinedBehaviorSanitizer. Passing them
+does not establish complete menu coverage or in-game listening usability.
+
 ## Verification so far
 
 On 2026-10-14, the normal SDK generator, runtime and Vulkan plugin built from the complete public patch series. Fresh game generation retained the verified functions and hooks, and the public CMake target compiled and linked successfully. Prism also built from its published patch. The staged installation passed the check-only preflight without loading Prism or launching the game.

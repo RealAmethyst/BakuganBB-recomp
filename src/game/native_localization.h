@@ -17,7 +17,10 @@ struct MenuTextResult {
 // establish the exact resource ID through the feature's native text consumer.
 // 823B60B8 selects a descriptor; 8212ECF0 resolves its relative string offset.
 // Final entries are deliberately unsupported: no allocation extent is proven.
-inline MenuTextResult ReadMenuText(const GuestUiMemory& memory, uint32_t id) {
+// Optional detail fields may accept a verified empty string; names and labels
+// retain the default rejection. This never relaxes ownership or range checks.
+inline MenuTextResult ReadMenuText(const GuestUiMemory& memory, uint32_t id,
+                                   bool allow_empty = false) {
   MenuTextResult result;
   const auto fail = [&](const char* reason, uint64_t address) {
     result.reason = reason;
@@ -121,7 +124,7 @@ inline MenuTextResult ReadMenuText(const GuestUiMemory& memory, uint32_t id) {
       result.error = text.error;
       return fail("text_read", text.address);
     }
-    if (text.value->empty()) return fail("text_empty", base + *start);
+    if (!allow_empty && text.value->empty()) return fail("text_empty", base + *start);
     result.value = text.value;
     return result;
   }
