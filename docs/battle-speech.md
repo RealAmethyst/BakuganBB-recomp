@@ -1,6 +1,6 @@
 # Battle selection and match-entrance speech
 
-Investigation date: 2026-10-15. Tracking: [issue 32](https://github.com/RealAmethyst/bb-recomp/issues/32).
+Investigation date: 2026-10-15. Tracking: [issue 32](https://github.com/RealAmethyst/BakuganBB-recomp/issues/32).
 Addresses refer to the [supported executable](executable-baseline.md). Capture
 uses game-owned localized text and the existing shared speech queue. Original
 execution, CPU registers and floating-point state are preserved.
@@ -149,8 +149,8 @@ device or screen reader. Independent source reviews found no confirmed
 correctness blockers in these scopes. The user confirms that the new speech spoke during testing of
 `diagnostic-20261015.1`, but the gate cue made it difficult to hear. Detailed
 per-screen ordering and gameplay acceptance remains incomplete. Audio masking
-and activation follow-ups are recorded in [issue 31](https://github.com/RealAmethyst/bb-recomp/issues/31);
-the next-session priority is the [settings rewrite](https://github.com/RealAmethyst/bb-recomp/issues/33).
+and activation follow-ups are recorded in [issue 31](https://github.com/RealAmethyst/BakuganBB-recomp/issues/31);
+the next-session priority is the [settings rewrite](https://github.com/RealAmethyst/BakuganBB-recomp/issues/33).
 
 Private original-instruction evidence is retained in `battle-speech-20261015`.
 No RE database annotations were added. Raw game code and assets remain outside

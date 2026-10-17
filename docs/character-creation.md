@@ -2,7 +2,7 @@
 
 ## Evidence and scope
 
-These contracts were traced on 2026-10-14 against the [pinned executable](executable-baseline.md), using fresh original instructions, resource consumers and privately inspected previews. No reverse-engineering database annotations were added. Raw exports and game resources remain private. [Issue 26](https://github.com/RealAmethyst/bb-recomp/issues/26) tracks implementation and listening acceptance.
+These contracts were traced on 2026-10-14 against the [pinned executable](executable-baseline.md), using fresh original instructions, resource consumers and privately inspected previews. No reverse-engineering database annotations were added. Raw exports and game resources remain private. [Issue 26](https://github.com/RealAmethyst/BakuganBB-recomp/issues/26) tracks implementation and listening acceptance.
 
 The attribute-selection parent and detailed appearance editor are separate native tasks. Name entry is a child of the parent; its physical-keyboard contract is documented in [Story entry](story-entry-freeze.md). Native confirmation dialogs retain their independent lifetimes. Operation-status messages are documented in the [localization record](localization-consumers.md#native-operation-status-messages).
 

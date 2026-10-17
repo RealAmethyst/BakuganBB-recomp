@@ -5,7 +5,7 @@
 This record covers the native setup screens reached from the main menu's battle
 entry. The portrait introduction immediately before a battle is a separate
 [capture](battle-speech.md). Work and listening acceptance are tracked in
-[issue 36](https://github.com/RealAmethyst/bb-recomp/issues/36).
+[issue 36](https://github.com/RealAmethyst/BakuganBB-recomp/issues/36).
 
 The addresses below were traced on 2026-10-15 against the supported executable
 in the [baseline](executable-baseline.md), using read-only Ghidra decompilation

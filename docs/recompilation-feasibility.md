@@ -29,7 +29,7 @@ The target is the Xbox 360 version of the 2009 game. Linux, x86-64, Vulkan, fait
 
 Game assets, proprietary executable content, decompilation dumps and acquisition guidance must never enter source, documentation, public tests, CI artifacts or releases. Generated files require the same scrutiny as their inputs. This document contains technical source references only; it does not describe obtaining game content.
 
-GitHub Issues is the authoritative tracker in the private [Battle Brawlers repository](https://github.com/RealAmethyst/bb-recomp), created with owner approval on 2026-10-14. The [research epic](https://github.com/RealAmethyst/bb-recomp/issues/1) owns the investigations. The research gates below describe acceptance scope, not a second Markdown ticket backlog. The repository for a different Bakugan game is unrelated.
+GitHub Issues is the authoritative tracker in the private [Battle Brawlers repository](https://github.com/RealAmethyst/BakuganBB-recomp), created with owner approval on 2026-10-14. The [research epic](https://github.com/RealAmethyst/BakuganBB-recomp/issues/1) owns the investigations. The research gates below describe acceptance scope, not a second Markdown ticket backlog. The repository for a different Bakugan game is unrelated.
 
 ## What native static recompilation means here
 

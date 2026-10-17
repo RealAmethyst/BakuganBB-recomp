@@ -1,6 +1,6 @@
 # Accessibility audio research
 
-Research dates: 2026-10-14 to 2026-10-15. Tracking: [research issue 29](https://github.com/RealAmethyst/bb-recomp/issues/29) and [implementation issue 31](https://github.com/RealAmethyst/bb-recomp/issues/31). The original proposal below is followed by source implementation and offline validation. Initial gameplay listening feedback is recorded below; detailed directional and lifecycle acceptance remains incomplete.
+Research dates: 2026-10-14 to 2026-10-15. Tracking: [research issue 29](https://github.com/RealAmethyst/BakuganBB-recomp/issues/29) and [implementation issue 31](https://github.com/RealAmethyst/BakuganBB-recomp/issues/31). The original proposal below is followed by source implementation and offline validation. Initial gameplay listening feedback is recorded below; detailed directional and lifecycle acceptance remains incomplete.
 
 ## Test implementation
 
@@ -94,7 +94,7 @@ the opponent is moving the ball. Bakugan selection and the state after landing
 on a card must be silent. Native control/ball-motion phase consumers still need
 to be traced; field visibility alone does not establish those states.
 
-The next-session priority is the [settings UI rewrite, issue 33](https://github.com/RealAmethyst/bb-recomp/issues/33):
+The next-session priority is the [settings UI rewrite, issue 33](https://github.com/RealAmethyst/BakuganBB-recomp/issues/33):
 inventory existing options, navigation and persistence/reset behavior, then
 replace the presentation with extensible categories including Accessibility.
 The designer will settle unresolved category and navigation choices. Per-cue
@@ -119,7 +119,7 @@ These are offline DSP results on the current Linux x86-64 host. SDL output, devi
 
 ### Gate-card audition edit
 
-[Issue 31](https://github.com/RealAmethyst/bb-recomp/issues/31) tracks the selected `g_menu` bank, zero-based stream 3, for a repeated gate-card cue. The original mono 44,100 Hz source has 15,636 frames and no native loop metadata. Its SHA-256 is `360b25242f13b0c48c895cba40cd6585593548a6a63e696c7d9de05595b7101c`. The designer reported an opening click and requested an edit shared by friendly and enemy cards. The earlier enemy pitch choice is minus one semitone.
+[Issue 31](https://github.com/RealAmethyst/BakuganBB-recomp/issues/31) tracks the selected `g_menu` bank, zero-based stream 3, for a repeated gate-card cue. The original mono 44,100 Hz source has 15,636 frames and no native loop metadata. Its SHA-256 is `360b25242f13b0c48c895cba40cd6585593548a6a63e696c7d9de05595b7101c`. The designer reported an opening click and requested an edit shared by friendly and enemy cards. The earlier enemy pitch choice is minus one semitone.
 
 The first edited audition candidate removes 1,544 opening frames (about 35 ms), then applies raised-cosine entrance/exit fades of 353/220 frames. Enemy playback uses libsamplerate 0.2.2 best-quality sinc resampling at the inverse of `2^(-1/12)`, with a 44-frame endpoint taper to remove resampler edge ringing. This lengthens the enemy cycle by approximately 5.95 percent. Both outputs use common gain `0.7247231356142394` to retain headroom. A separate synthetic 440 Hz check of this pitch path measured a 0.0242-cent deviation from the target.
 

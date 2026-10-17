@@ -1,7 +1,7 @@
 {
   "$schema": "https://recomp.fyi/schema/v1.json",
   "game": "Bakugan Battle Brawlers",
-  "project": "BB Recomp",
+  "project": "BakuganBB-recomp",
   "type": "recomp",
   "system": "Xbox 360",
   "status": "in-progress",

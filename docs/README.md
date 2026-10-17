@@ -26,4 +26,4 @@ These records preserve the investigation sequence. Dated earlier conclusions may
 - [Localization, menus, popups and logo events](localization-consumers.md).
 - [Pinned SDK patches](../patches/rexglue/README.md) and [Prism speech-library patch](../patches/prism/README.md).
 
-Current task status belongs in [GitHub Issues](https://github.com/RealAmethyst/bb-recomp/issues), rather than a second backlog here.
+Current task status belongs in [GitHub Issues](https://github.com/RealAmethyst/BakuganBB-recomp/issues), rather than a second backlog here.

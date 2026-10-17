@@ -2,7 +2,7 @@
 
 ## Scope and approved behavior
 
-[Issue 33](https://github.com/RealAmethyst/bb-recomp/issues/33) targets the game's
+[Issue 33](https://github.com/RealAmethyst/BakuganBB-recomp/issues/33) targets the game's
 settings screen reached from the main menu. On 2026-10-15 the owner corrected an
 initial interpretation that had targeted the host F4 overlay. That separate
 [source reference](host-settings.md) does not establish the native screen's

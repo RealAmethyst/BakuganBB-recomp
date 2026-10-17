@@ -1,6 +1,6 @@
 # First launch: missing indirect-call function
 
-Inspection date: 2026-10-14. Owning work: [issue 13](https://github.com/RealAmethyst/bb-recomp/issues/13), with the related emission defect in [issue 14](https://github.com/RealAmethyst/bb-recomp/issues/14). The preceding build and its boundaries are in [diagnostic-launch.md](diagnostic-launch.md).
+Inspection date: 2026-10-14. Owning work: [issue 13](https://github.com/RealAmethyst/BakuganBB-recomp/issues/13), with the related emission defect in [issue 14](https://github.com/RealAmethyst/BakuganBB-recomp/issues/14). The preceding build and its boundaries are in [diagnostic-launch.md](diagnostic-launch.md).
 
 ## Observed result
 

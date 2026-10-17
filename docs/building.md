@@ -92,7 +92,7 @@ or game-derived clip belongs in source control.
 
 The standard staging tool does not yet prepare those optional files. This is a
 development integration, with cue behavior and gameplay validation tracked in
-[issue 31](https://github.com/RealAmethyst/bb-recomp/issues/31). Release asset
+[issue 31](https://github.com/RealAmethyst/BakuganBB-recomp/issues/31). Release asset
 extraction remains deferred. See the [audio record](accessibility-audio.md) for
 the verified preparation and offline testing boundaries.
 
@@ -178,4 +178,4 @@ does not establish complete menu coverage or in-game listening usability.
 
 On 2026-10-14, the normal SDK generator, runtime and Vulkan plugin built from the complete public patch series. Fresh game generation retained the verified functions and hooks, and the public CMake target compiled and linked successfully. Prism also built from its published patch. The staged installation passed the check-only preflight without loading Prism or launching the game.
 
-This was checked with the pinned dependency sources already available locally, using isolated build environments. Downloading dependencies and following the guide on a clean machine, other Linux distributions, graphics and gameplay still need testing. The SDK and Prism retain upstream compiler warnings; the native application build had no compiler warnings. [Issue 24](https://github.com/RealAmethyst/bb-recomp/issues/24) tracks this build work.
+This was checked with the pinned dependency sources already available locally, using isolated build environments. Downloading dependencies and following the guide on a clean machine, other Linux distributions, graphics and gameplay still need testing. The SDK and Prism retain upstream compiler warnings; the native application build had no compiler warnings. [Issue 24](https://github.com/RealAmethyst/BakuganBB-recomp/issues/24) tracks this build work.

@@ -1,4 +1,4 @@
-# BB Recomp
+# BakuganBB-recomp
 
 An early, work-in-progress PC recompilation of Bakugan Battle Brawlers (2009) for Xbox 360. Linux is the first target, with other platforms planned. The aim is to preserve the original game and make it accessible to blind players.
 
@@ -18,7 +18,7 @@ Developers can already run the automated code checks with `python3 tools/run_tes
 
 I am blind, so I can't visually check the graphics. Reports of missing, distorted or incorrectly displayed graphics are especially helpful. Please describe what looks wrong and what you expected to see.
 
-[Report a bug on GitHub](https://github.com/RealAmethyst/bb-recomp/issues/new), including:
+[Report a bug on GitHub](https://github.com/RealAmethyst/BakuganBB-recomp/issues/new), including:
 
 - Your build or commit, operating system, GPU and driver version.
 - How to reproduce the problem and where it happens in the game.

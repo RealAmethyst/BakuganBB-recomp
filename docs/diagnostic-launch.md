@@ -1,6 +1,6 @@
 # First private diagnostic launch
 
-Inspection date: 2026-10-14. Owning task: [issue 12](https://github.com/RealAmethyst/bb-recomp/issues/12), under [issue 4](https://github.com/RealAmethyst/bb-recomp/issues/4). This follows the [first native build](first-build-gates.md).
+Inspection date: 2026-10-14. Owning task: [issue 12](https://github.com/RealAmethyst/BakuganBB-recomp/issues/12), under [issue 4](https://github.com/RealAmethyst/BakuganBB-recomp/issues/4). This follows the [first native build](first-build-gates.md).
 
 ## Scope and speech decision
 
@@ -36,7 +36,7 @@ tested flow. The report does not enumerate individual screens or controllers;
 exhaustive route and regression coverage remain unconfirmed. Card effect wording
 embedded in compressed artwork remains unverified and is not announced by this
 route. Launch normally to use the new build; no system or screen-reader restart
-is required. Source integration is tracked by [issue 36](https://github.com/RealAmethyst/bb-recomp/issues/36).
+is required. Source integration is tracked by [issue 36](https://github.com/RealAmethyst/BakuganBB-recomp/issues/36).
 
 ## Battle accessibility test build
 
@@ -77,7 +77,7 @@ User-controlled listening on 2026-10-15 confirms that the cue and new speech
 operate, but the cue onset is too sharp and its volume masks speech. The revised
 target permits playback only during player control or opponent ball movement;
 Bakugan selection and post-landing playback are unwanted. These adjustments
-are deferred. The next-session priority is the [settings UI rewrite, issue 33](https://github.com/RealAmethyst/bb-recomp/issues/33),
+are deferred. The next-session priority is the [settings UI rewrite, issue 33](https://github.com/RealAmethyst/BakuganBB-recomp/issues/33),
 starting with an inventory before designing extensible categories including
 Accessibility. The installed build remains unchanged.
 
@@ -96,7 +96,7 @@ Installed host SHA-256: `26f0b8a0ac4521a0f3db26ca37deb6aaae37668d7db7d80b9c83f41
 
 Status: awaiting listening confirmation of direct descriptions, "Selected", quiet appearance browsing and the next normal saving message. Launch normally to use `.9`; no system or screen-reader restart is needed. The following `.8` evidence records the initial implementation, before this follow-up.
 
-Previous private build: `diagnostic-20261014.8`, installed with `.7` backed up under [issue 26](https://github.com/RealAmethyst/bb-recomp/issues/26). It adds attribute-selection names, descriptions and seven indexed choices; detailed appearance menus with native captions, enabled-item positions and conditional selection markers; 47 supplementary preview descriptions; and actual native saving/deleting and creator-loading messages. The ordinary load/check path has no verified status caption and remains silent. [Character creation](character-creation.md) and the [operation-status record](localization-consumers.md#native-operation-status-messages) own the source contracts.
+Previous private build: `diagnostic-20261014.8`, installed with `.7` backed up under [issue 26](https://github.com/RealAmethyst/BakuganBB-recomp/issues/26). It adds attribute-selection names, descriptions and seven indexed choices; detailed appearance menus with native captions, enabled-item positions and conditional selection markers; 47 supplementary preview descriptions; and actual native saving/deleting and creator-loading messages. The ordinary load/check path has no verified status caption and remains silent. [Character creation](character-creation.md) and the [operation-status record](localization-consumers.md#native-operation-status-messages) own the source contracts.
 
 The parent survives its name/editor children; returns announce the current item without repeating its title. Detailed editor categories use actual captions, without an inferred title or heading. Speech preserves delayed first-item queueing and reads opening hints once. Game controls, screen-reader integration and physical-keyboard name entry are retained.
 
@@ -110,7 +110,7 @@ Status: awaiting user-controlled listening and controller checks. Check attribut
 
 ## Save, popup and logo-timing follow-up
 
-Previous private build: `diagnostic-20261014.7`, installed with `.6` backed up under [issue 22](https://github.com/RealAmethyst/bb-recomp/issues/22). It adds the native save picker's final formatted name/date/play-time text and displayed hints; shared native one-choice/two-choice popup body, actual selection and hints; and caption-visible startup logo cues. No save-screen heading is invented. Native game input and the deletion popup's initial No selection are preserved.
+Previous private build: `diagnostic-20261014.7`, installed with `.6` backed up under [issue 22](https://github.com/RealAmethyst/BakuganBB-recomp/issues/22). It adds the native save picker's final formatted name/date/play-time text and displayed hints; shared native one-choice/two-choice popup body, actual selection and hints; and caption-visible startup logo cues. No save-screen heading is invented. Native game input and the deletion popup's initial No selection are preserved.
 
 Logo narration now follows actual compressed-picture identity through decoder reordering, picture copies, queued frames and successful drawing. It speaks only inside privately verified readable intervals. Loading, first submission, wall-clock delays and counted draw attempts do not determine the cue. Normal startup and reset behavior were traced separately. The [localization record](localization-consumers.md) owns all original consumers, addresses and remaining limits.
 
@@ -126,7 +126,7 @@ Status: awaiting user-controlled listening and controller checks on `.7`. Check 
 
 ## Startup and menu speech candidate
 
-Previous private build: `diagnostic-20261014.6`, installed with `.5` backed up under [issue 22](https://github.com/RealAmethyst/bb-recomp/issues/22). It adds verified startup-logo artwork wording, title/prompt, actual host option-message text and focused choices, and the five main-menu captions/descriptions/positions with opening hints. The [localization record](localization-consumers.md) owns original behavior, recovered transitions and remaining consumer gaps. The project instructions now explicitly treat game understanding and reusable documentation as core deliverables for future mod support.
+Previous private build: `diagnostic-20261014.6`, installed with `.5` backed up under [issue 22](https://github.com/RealAmethyst/BakuganBB-recomp/issues/22). It adds verified startup-logo artwork wording, title/prompt, actual host option-message text and focused choices, and the five main-menu captions/descriptions/positions with opening hints. The [localization record](localization-consumers.md) owns original behavior, recovered transitions and remaining consumer gaps. The project instructions now explicitly treat game understanding and reusable documentation as core deliverables for future mod support.
 
 Fourteen original instruction events replace recurring menu/title-state reads and repeated widget-record traversal. Native rendering captures only owned, uncached text. A bounded output worker serializes copied events outside runtime critical locks. The runtime's guarded-copy API synchronizes mapping validation and copying; it does not replace ownership evidence. Screen wording and delayed-item/hint policy remain in the separate launcher layer.
 

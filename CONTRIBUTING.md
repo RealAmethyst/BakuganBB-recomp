@@ -2,7 +2,7 @@
 
 ## Scope and tracking
 
-Use [GitHub Issues](https://github.com/RealAmethyst/bb-recomp/issues) for work planning and evidence. Issue 1 groups the original investigations. Keep changes focused and preserve working behavior. The current priority is accurate, accessible playability; enhancements follow that foundation.
+Use [GitHub Issues](https://github.com/RealAmethyst/BakuganBB-recomp/issues) for work planning and evidence. Issue 1 groups the original investigations. Keep changes focused and preserve working behavior. The current priority is accurate, accessible playability; enhancements follow that foundation.
 
 Read the [architecture](docs/architecture.md), [build guide](docs/building.md) and relevant [game records](docs/README.md) before changing an integration contract. Propose independent work in separate feature branches and focused pull requests. Explain the user-visible problem, actual cause, validation and remaining limits. Disclose AI assistance; never represent AI-written code as human-authored. Check a dependency's own contribution policy before proposing changes upstream.
 

@@ -1,6 +1,6 @@
 # Localization and console-dialog consumers
 
-Inspection date: 2026-10-14. Owning investigation: [issue 3](https://github.com/RealAmethyst/bb-recomp/issues/3).
+Inspection date: 2026-10-14. Owning investigation: [issue 3](https://github.com/RealAmethyst/BakuganBB-recomp/issues/3).
 
 ## Findings and limits
 
@@ -132,7 +132,7 @@ Description scheduling in `0x822CEC00` selects bank zero and identifier `0x613 +
 
 ## Verified startup and menu consumers
 
-The subsequent original-instruction and private artwork investigation under [issue 22](https://github.com/RealAmethyst/bb-recomp/issues/22) resolves the caption and renderer gaps above. Evidence collections `menu-speech-followup-20261014` and `startup-speech-20261014` retain original instruction exports, bounded resource hashes, UV mappings and inspected images. No reverse-engineering annotations were added. This establishes static sources and integration points, not listening or gameplay acceptance.
+The subsequent original-instruction and private artwork investigation under [issue 22](https://github.com/RealAmethyst/BakuganBB-recomp/issues/22) resolves the caption and renderer gaps above. Evidence collections `menu-speech-followup-20261014` and `startup-speech-20261014` retain original instruction exports, bounded resource hashes, UV mappings and inspected images. No reverse-engineering annotations were added. This establishes static sources and integration points, not listening or gameplay acceptance.
 
 ### Main-menu captions, locale and selection
 
@@ -270,7 +270,7 @@ The disabled-confirm helper `0x8223D338` is not a popup: the constructed compone
 
 ## Native operation status messages
 
-Issue [26](https://github.com/RealAmethyst/bb-recomp/issues/26) extends capture to the native popup subtype with no choices. Fresh read-only original evidence is retained privately in `status-message-speech-20261014`; no annotations were added. Factory `0x821E00D0 → 0x821DFDF8` supplies kind two to shared constructor `0x821DFBE8` and installs table `0x82003CB0`. The previous constructor observer rejected this kind. Its bank and body ID remain at owner `+0x88/+0x8C`, with render record `+0x74`; the traced subtype does not change them during its lifetime.
+Issue [26](https://github.com/RealAmethyst/BakuganBB-recomp/issues/26) extends capture to the native popup subtype with no choices. Fresh read-only original evidence is retained privately in `status-message-speech-20261014`; no annotations were added. Factory `0x821E00D0 → 0x821DFDF8` supplies kind two to shared constructor `0x821DFBE8` and installs table `0x82003CB0`. The previous constructor observer rejected this kind. Its bank and body ID remain at owner `+0x88/+0x8C`, with render record `+0x74`; the traced subtype does not change them during its lifetime.
 
 Handler `0x821E0F70` activates only after the opening animation reaches state two. The after-instruction event at `0x821E0FE4` supplies owner `r31` and state `r11`; closing event `0x821E102C` supplies owner `r31` and state `r10`. Completion follows native operation completion through `0x821C18E0 → 0x821C1408`, setting the flag consumed by `0x821DF9D8`. Removal `0x821DFB60` reaches existing task cleanup `0x823B87A8`; deleting destructor `0x821E16D0` reaches existing base cleanup `0x821DF478`. Animation, blank capture and parent focus changes do not create another lifetime.
 

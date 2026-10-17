@@ -3,7 +3,7 @@
 ## Direction and evidence
 
 - Build an accurate native port of the Xbox 360 game, with accessibility accompanying each playable milestone. Linux/Vulkan is the first target; do not claim other platforms are validated.
-- Follow [CONTRIBUTING.md](CONTRIBUTING.md), the [architecture](docs/architecture.md) and [build guide](docs/building.md). Use [GitHub Issues](https://github.com/RealAmethyst/bb-recomp/issues) as the authoritative tracker; do not add a competing Markdown backlog.
+- Follow [CONTRIBUTING.md](CONTRIBUTING.md), the [architecture](docs/architecture.md) and [build guide](docs/building.md). Use [GitHub Issues](https://github.com/RealAmethyst/BakuganBB-recomp/issues) as the authoritative tracker; do not add a competing Markdown backlog.
 - Understanding the game is a core deliverable for future contributors and mod support. Decompile, trace and document every screen, feature, mechanic and supporting system as work reaches it. Preserve verified ownership, state transitions, data/text consumers and input contracts in the [documentation records](docs/README.md); distinguish evidence, hypotheses and unresolved behavior.
 - Prefer hooks at verified semantic operations over repeated memory polling. Keep event capture separate from speech policy. Trace pointer chains through the actual consumer, validate ownership and lifetime, and fail closed. Never infer game facts from another project's addresses or behavior. Report every RE database annotation by address and name or comment.
 
