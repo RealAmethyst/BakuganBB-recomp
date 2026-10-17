@@ -1,0 +1,159 @@
+name: Windows build checks
+
+on:
+  push:
+    branches: [main, 'work/windows-*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: pwsh
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  core:
+    name: Shared code and synthetic tests
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 20
+    steps:
+      - name: Preserve checksummed source bytes
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: amd64
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Configure shared code without game inputs
+        run: >-
+          cmake -S . -B "$env:RUNNER_TEMP/core-build" -G Ninja
+          -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTING=ON -DBRAWLERS_BUILD_NATIVE=OFF
+      - name: Build shared code and fixtures
+        run: cmake --build "$env:RUNNER_TEMP/core-build" --parallel 2
+      - name: Run native synthetic tests
+        run: >-
+          ctest --test-dir "$env:RUNNER_TEMP/core-build"
+          --output-on-failure --no-tests=error --timeout 60
+      - name: Run speech policy with simulated screen readers
+        working-directory: tests/python
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src/core/accessibility
+        run: >-
+          python -m unittest -v test_keyboard_speech test_screen_speech
+          test_speech_text test_prism_speech
+
+  rexglue:
+    name: Patched ReXGlue generator and Vulkan runtime
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 90
+    steps:
+      - name: Preserve checksummed source bytes
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: amd64
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Fetch pinned open-source SDK and apply verified patches
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $manifest = Get-Content patches/rexglue/manifest.json -Raw | ConvertFrom-Json
+          $sdkSource = "$env:RUNNER_TEMP/rexglue"
+          git clone --no-checkout https://github.com/rexglue/rexglue-sdk.git $sdkSource
+          git -C $sdkSource checkout --detach $manifest.revision
+          git -C $sdkSource submodule update --init --recursive -- `
+            thirdparty/FFmpeg thirdparty/catch2 thirdparty/cli11 thirdparty/fmt `
+            thirdparty/glslang thirdparty/imgui thirdparty/inja thirdparty/libmspack `
+            thirdparty/o1heap thirdparty/sdl3 thirdparty/simde thirdparty/spdlog `
+            thirdparty/spirv-headers thirdparty/spirv-tools thirdparty/tomlplusplus `
+            thirdparty/tracy thirdparty/utfcpp thirdparty/vulkan-headers `
+            thirdparty/vulkan-memory-allocator thirdparty/xxHash
+          python tools/apply_dependency_patches.py rexglue --source $sdkSource
+      - name: Configure Windows Vulkan SDK
+        run: >-
+          cmake --preset win-amd64 -S "$env:RUNNER_TEMP/rexglue"
+          -B "$env:RUNNER_TEMP/sdk-build" -DREXGLUE_BUILD_TESTS=OFF
+          -DREXGLUE_ENABLE_TRACY=OFF -DREXGLUE_USE_D3D12=OFF
+          -DREXGLUE_USE_VULKAN=ON
+      - name: Compile generator and runtime without running game code
+        run: >-
+          cmake --build "$env:RUNNER_TEMP/sdk-build" --config Release
+          --target rexglue rexgpu-xenos --parallel 2
+
+  prism:
+    name: Prism Windows screen-reader backends
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 30
+    steps:
+      - name: Preserve checksummed source bytes
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: amd64
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Fetch pinned Prism and apply verified patches
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $manifest = Get-Content patches/prism/manifest.json -Raw | ConvertFrom-Json
+          $prismSource = "$env:RUNNER_TEMP/prism"
+          git clone --no-checkout https://github.com/ethindp/prism.git $prismSource
+          git -C $prismSource checkout --detach $manifest.revision
+          python tools/apply_dependency_patches.py prism --source $prismSource
+      - name: Configure screen-reader backends with standalone TTS disabled
+        run: >-
+          cmake -S "$env:RUNNER_TEMP/prism" -B "$env:RUNNER_TEMP/prism-build"
+          -G Ninja -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl
+          -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+          -DPRISM_DEPENDENCY_PROVIDER=BUNDLED -DPRISM_BACKEND_DEFAULT=OFF
+          -DPRISM_ENABLE_NVDA_BACKEND=ON -DPRISM_ENABLE_JAWS_BACKEND=ON
+          -DPRISM_ENABLE_ZOOM_TEXT_BACKEND=ON -DPRISM_ENABLE_SENSE_READER_BACKEND=ON
+          -DPRISM_ENABLE_PC_TALKER_BACKEND=ON -DPRISM_ENABLE_ZDSR_BACKEND=ON
+          -DPRISM_ENABLE_BOY_PC_READER_BACKEND=ON
+          -DPRISM_ENABLE_POWER_MANAGEMENT=OFF -DPRISM_ENABLE_TESTS=OFF
+          -DPRISM_ENABLE_DEMOS=OFF -DPRISM_ENABLE_GDEXTENSION=OFF
+          -DPRISM_ENABLE_SHIMS=OFF -DPRISM_BUILD_WINELIBS=OFF
+          -DPRISM_REGENERATE_DJINNI=OFF -DPRISM_IPO=OFF
+      - name: Verify enabled backend configuration
+        run: |
+          $expected = @('NVDA', 'JAWS', 'ZOOM_TEXT', 'SENSE_READER',
+                        'PC_TALKER', 'ZDSR', 'BOY_PC_READER')
+          $enabled = @()
+          foreach ($line in Get-Content "$env:RUNNER_TEMP/prism-build/CMakeCache.txt") {
+            if ($line -match '^PRISM_ENABLE_(.+)_BACKEND:STRING=(.+)$') {
+              if ($Matches[2] -eq 'ON') {
+                $enabled += $Matches[1]
+              } elseif ($Matches[2] -ne 'OFF') {
+                throw "Unexpected backend selection: $line"
+              }
+            }
+          }
+          if (Compare-Object ($expected | Sort-Object) ($enabled | Sort-Object)) {
+            throw 'Prism backend configuration differs from the screen-reader allowlist'
+          }
+      - name: Compile Prism without loading speech services
+        run: cmake --build "$env:RUNNER_TEMP/prism-build" --target prism --parallel 2

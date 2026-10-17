@@ -174,6 +174,43 @@ python3 tests/runtime/native_vs_regressions.py "$WORK/rexglue" \
 They compile with AddressSanitizer and UndefinedBehaviorSanitizer. Passing them
 does not establish complete menu coverage or in-game listening usability.
 
+## Windows build checks
+
+The [Windows workflow](../.github/workflows/windows-build.yml) prepares three
+independent jobs on standard GitHub-hosted Windows x64 virtual machines:
+
+- Compile the shared core with Clang and run the eight native synthetic fixtures,
+  plus the Python speech-policy fixtures with simulated screen readers.
+- Compile the pinned, patched ReXGlue generator and Vulkan runtime.
+- Compile the pinned, patched Prism library with Windows screen-reader backends
+  enabled and standalone text-to-speech disabled. The job checks the selected
+  backends without loading the library or starting a screen reader.
+
+Pushes to `main` or `work/windows-*`, pull requests targeting `main`, and manual
+dispatches trigger the workflow. Once it is present on the default branch, it
+can be started from Actions, Windows build checks, Run workflow, or with:
+
+```sh
+gh workflow run windows-build.yml --repo RealAmethyst/BakuganBB-recomp
+```
+
+The workflow uses only public source and original synthetic fixtures. It does
+not fetch game files, generate or compile proprietary game code, or upload
+artifacts or caches. Dependency revisions come from the patch manifests. Git
+line-ending conversion is disabled in the disposable VMs so the patch checksum
+checks inspect the original bytes.
+
+Standard hosted runner execution is
+[free for public repositories](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
+The workflow does not request larger runners or change billing settings.
+
+This is preparation for Windows support, not a Windows game build. The native
+host, launcher and staging still require Windows integration. A successful run
+would establish only the checks listed above. Windows testers must later build
+the game locally using their own files and verify speech, audio, controller
+input and graphics. [Issue 38](https://github.com/RealAmethyst/BakuganBB-recomp/issues/38)
+tracks that work and actual run results.
+
 ## Verification so far
 
 On 2026-10-14, the normal SDK generator, runtime and Vulkan plugin built from the complete public patch series. Fresh game generation retained the verified functions and hooks, and the public CMake target compiled and linked successfully. Prism also built from its published patch. The staged installation passed the check-only preflight without loading Prism or launching the game.
