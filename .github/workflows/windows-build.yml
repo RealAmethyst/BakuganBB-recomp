@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -53,10 +52,10 @@ jobs:
       - name: Run speech policy with simulated screen readers
         working-directory: tests/python
         env:
-          PYTHONPATH: ${{ github.workspace }}/src/core/accessibility
+          PYTHONPATH: ${{ github.workspace }}/src/core/accessibility;${{ github.workspace }}/src/platform/common
         run: >-
           python -m unittest -v test_keyboard_speech test_screen_speech
-          test_speech_text test_prism_speech
+          test_speech_text test_prism_speech test_launch test_windows_launch test_build_tools
 
   rexglue:
     name: Patched ReXGlue generator and Vulkan runtime
@@ -94,11 +93,45 @@ jobs:
           cmake --preset win-amd64 -S "$env:RUNNER_TEMP/rexglue"
           -B "$env:RUNNER_TEMP/sdk-build" -DREXGLUE_BUILD_TESTS=OFF
           -DREXGLUE_ENABLE_TRACY=OFF -DREXGLUE_USE_D3D12=OFF
-          -DREXGLUE_USE_VULKAN=ON
+          -DREXGLUE_USE_VULKAN=ON -DREXGLUE_ENABLE_FIDELITYFX=OFF
+          -DCMAKE_INSTALL_PREFIX="$env:RUNNER_TEMP/sdk-install"
       - name: Compile generator and runtime without running game code
         run: >-
           cmake --build "$env:RUNNER_TEMP/sdk-build" --config Release
-          --target rexglue rexgpu-xenos --parallel 2
+          --target install --parallel 2
+      - name: Prepare original synthetic link inputs
+        run: python tests/build/make_link_fixture.py --output "$env:RUNNER_TEMP/link-fixture"
+      - name: Configure the actual host against the installed SDK
+        run: >-
+          cmake -S . -B "$env:RUNNER_TEMP/native-build" -G Ninja
+          -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTING=OFF -DBRAWLERS_BUILD_NATIVE=ON
+          -DBRAWLERS_REXGLUE_SOURCE_DIR="$env:RUNNER_TEMP/rexglue"
+          -DBRAWLERS_REXGLUE_INSTALL_DIR="$env:RUNNER_TEMP/sdk-install"
+          -DBRAWLERS_GENERATED_DIR="$env:RUNNER_TEMP/link-fixture"
+      - name: Compile and link the host without executing it
+        run: cmake --build "$env:RUNNER_TEMP/native-build" --target battle-brawlers --parallel 2
+      - name: Audit native PE architecture and runtime imports
+        env:
+          PYTHONPATH: ${{ github.workspace }}/tools
+        run: >-
+          python -c "import os; from pathlib import Path; from stage_game import audit_windows_runtime;
+          files = audit_windows_runtime(native=Path(os.environ['RUNNER_TEMP']) / 'native-build/native');
+          print('Audited native files:', ', '.join(sorted(files)))"
+      - name: Fetch the checksummed optional Steam Audio SDK
+        run: |
+          $archive = "$env:RUNNER_TEMP/steamaudio.zip"
+          Invoke-WebRequest https://github.com/ValveSoftware/steam-audio/releases/download/v4.8.1/steamaudio_4.8.1.zip -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne '4a0aa5ec1176f38f0b0993a37c2259d9e86f27e22d5e24f83ec4c3cb9a1d5449') {
+            throw 'Steam Audio SDK checksum mismatch'
+          }
+          Expand-Archive $archive "$env:RUNNER_TEMP/steam-audio"
+      - name: Compile the optional audio integration without opening devices
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          cmake -S . -B "$env:RUNNER_TEMP/native-build" `
+            -DBRAWLERS_STEAM_AUDIO_SDK_DIR="$env:RUNNER_TEMP/steam-audio/steamaudio"
+          cmake --build "$env:RUNNER_TEMP/native-build" --target battle-brawlers --parallel 2
 
   prism:
     name: Prism Windows screen-reader backends
@@ -157,3 +190,10 @@ jobs:
           }
       - name: Compile Prism without loading speech services
         run: cmake --build "$env:RUNNER_TEMP/prism-build" --target prism --parallel 2
+      - name: Audit Prism PE architecture and runtime imports
+        env:
+          PYTHONPATH: ${{ github.workspace }}/tools
+        run: >-
+          python -c "import os; from pathlib import Path; from stage_game import audit_windows_runtime;
+          files = audit_windows_runtime(prism_build=Path(os.environ['RUNNER_TEMP']) / 'prism-build');
+          print('Audited Prism files:', ', '.join(sorted(files)))"

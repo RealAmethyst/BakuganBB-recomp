@@ -3,6 +3,7 @@
 ## Start here
 
 - [Building and testing](building.md): source-only checks and private integration requirements.
+- [Windows development build](building-windows.md): pinned dependencies, private staging and manual checks.
 - [Architecture](architecture.md): source layout and dependency boundaries.
 - [Host and speech integration](integration.md): component contracts and synthetic coverage.
 - [Contribution guide](../CONTRIBUTING.md): content, verification and attribution requirements.

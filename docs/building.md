@@ -1,5 +1,7 @@
 # Building on Linux
 
+For the Windows development path, see [Building on Windows](building-windows.md).
+
 ## Before you start
 
 This guide builds the game locally from your own files. It does not download game files or provide a prebuilt game. Keep the game, dependencies, generated code and build output outside this repository. Do not upload the resulting installation or generated files.
@@ -180,13 +182,17 @@ The [Windows workflow](../.github/workflows/windows-build.yml) prepares three
 independent jobs on standard GitHub-hosted Windows x64 virtual machines:
 
 - Compile the shared core with Clang and run the eight native synthetic fixtures,
-  plus the Python speech-policy fixtures with simulated screen readers.
-- Compile the pinned, patched ReXGlue generator and Vulkan runtime.
+  plus the Windows GUI-subsystem pipe probe and Python launcher, staging and
+  speech-policy fixtures with simulated screen readers.
+- Build and install the pinned, patched ReXGlue generator and Vulkan runtime,
+  then compile and link the actual host against original synthetic guest stand-ins.
+  Both ordinary and optional spatial-audio host configurations are compiled.
+  Runtime PE imports and architecture are inspected. The synthetic host is never run.
 - Compile the pinned, patched Prism library with Windows screen-reader backends
   enabled and standalone text-to-speech disabled. The job checks the selected
   backends without loading the library or starting a screen reader.
 
-Pushes to `main`, pull requests targeting `main`, and manual dispatches trigger
+Pushes to `main`, pull requests, and manual dispatches trigger
 the workflow. Once it is present on the default branch, it
 can be started from Actions, Windows build checks, Run workflow, or with:
 
@@ -204,8 +210,9 @@ Standard hosted runner execution is
 [free for public repositories](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
 The workflow does not request larger runners or change billing settings.
 
-This is preparation for Windows support, not a Windows game build. The native
-host, launcher and staging still require Windows integration. A successful run
+These checks do not build translated game code. The
+[Windows guide](building-windows.md) describes private generation, native linking,
+launcher and staging. A successful run
 would establish only the checks listed above. Windows testers must later build
 the game locally using their own files and verify speech, audio, controller
 input and graphics. [Issue 38](https://github.com/RealAmethyst/BakuganBB-recomp/issues/38)
