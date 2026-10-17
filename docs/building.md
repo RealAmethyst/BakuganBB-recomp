@@ -186,8 +186,8 @@ independent jobs on standard GitHub-hosted Windows x64 virtual machines:
   enabled and standalone text-to-speech disabled. The job checks the selected
   backends without loading the library or starting a screen reader.
 
-Pushes to `main` or `work/windows-*`, pull requests targeting `main`, and manual
-dispatches trigger the workflow. Once it is present on the default branch, it
+Pushes to `main`, pull requests targeting `main`, and manual dispatches trigger
+the workflow. Once it is present on the default branch, it
 can be started from Actions, Windows build checks, Run workflow, or with:
 
 ```sh
