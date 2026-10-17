@@ -9,7 +9,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import launch
+if sys.platform == "win32":
+    import launch_support as launch
+else:
+    import launch
 from test_keyboard_speech import event, Speech
 from test_screen_speech import event as screen_event
 
@@ -133,7 +136,8 @@ class SupervisorTests(unittest.TestCase):
     def test_signal_exit_is_reported(self):
         code, events, log = self.run_fixture("import os, signal; os.kill(os.getpid(), signal.SIGTERM)")
         self.assertEqual((code, events), (1, ["process_failed"]))
-        self.assertIn("Host process exit: -15", log)
+        expected = 15 if sys.platform == "win32" else -15
+        self.assertIn(f"Host process exit: {expected}", log)
 
     def test_error_deduplicates_and_unknown_events_are_not_announced(self):
         code, events, log = self.run_fixture(
@@ -186,6 +190,7 @@ class SupervisorTests(unittest.TestCase):
             events = [key for key, _ in reporter.events]
             self.assertEqual(events, ["log_failed", "thread_created", "closed"])
 
+    @unittest.skipUnless(sys.platform == "linux", "Linux installation boundary")
     def test_incomplete_installation_never_spawns(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(subprocess, "Popen") as spawn:
             reporter = RecordingReporter()
@@ -193,6 +198,7 @@ class SupervisorTests(unittest.TestCase):
             spawn.assert_not_called()
             self.assertEqual(reporter.events[0][0], "missing_files")
 
+    @unittest.skipUnless(sys.platform == "linux", "Linux installation boundary")
     def test_check_never_spawns_or_creates_user_data(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(subprocess, "Popen") as spawn:
             root = Path(directory)
@@ -201,6 +207,7 @@ class SupervisorTests(unittest.TestCase):
             spawn.assert_not_called()
             self.assertFalse((root / "user-data").exists())
 
+    @unittest.skipUnless(sys.platform == "linux", "Linux installation boundary")
     def test_storage_setup_failure_is_reported_without_spawning(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(subprocess, "Popen") as spawn:
             root = Path(directory)
@@ -215,6 +222,7 @@ class SupervisorTests(unittest.TestCase):
                 self.assertIn("writable storage", output.getvalue())
             spawn.assert_not_called()
 
+    @unittest.skipUnless(sys.platform == "linux", "Linux installation boundary")
     def test_existing_launch_lock_prevents_second_process(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(subprocess, "Popen") as spawn:
             root = Path(directory)

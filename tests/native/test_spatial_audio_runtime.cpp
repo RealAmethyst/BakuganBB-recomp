@@ -1,15 +1,16 @@
-// Original synthetic offline integration fixture for the optional Linux runtime.
+// Original synthetic offline integration fixture for the optional audio runtime.
 // Compile this translation unit together with src/core/spatial_audio.cpp only:
 // it includes the runtime implementation to exercise its internal Engine and
 // deterministic controls-race seam. Do not also compile spatial_audio_runtime.cpp
-// or link SDL; the aborting SDL stubs below prohibit output-device operations.
+// separately. Link shared SDL for its real library loader; the aborting audio
+// stubs below prohibit output-device operations.
 //
 // Standalone build from the repository root (external SDK/header directories):
 // clang++ -std=c++17 -O1 -g -fsanitize=address,undefined \
 //   -fno-omit-frame-pointer -Wall -Wextra -Werror \
 //   -I"$STEAM_AUDIO_SDK/include" -I"$SDL_INCLUDE_DIR" \
 //   tests/native/test_spatial_audio_runtime.cpp src/core/spatial_audio.cpp \
-//   -ldl -pthread -o "$TEST_BINARY"
+//   -lSDL3 -pthread -o "$TEST_BINARY"
 // Run in an isolated filesystem/network/process environment with private
 // runtime, configuration, display, bus and device resources:
 // "$TEST_BINARY" "$STEAM_AUDIO_SDK/lib/linux-x64/libphonon.so" "$NEW_SCRATCH_DIR"
@@ -41,7 +42,7 @@ using namespace brawlers::audio;
 static void Put32(std::vector<unsigned char>& b, size_t p, uint32_t value) {
   for (unsigned n = 0; n < 4; ++n) b[p + n] = (value >> (8 * n)) & 255;
 }
-static void Save(const std::string& path, const std::vector<unsigned char>& bytes) {
+static void Save(const std::filesystem::path& path, const std::vector<unsigned char>& bytes) {
   std::ofstream file(path, std::ios::binary);
   file.write((const char*)bytes.data(), bytes.size());
   assert(file.good());
@@ -92,7 +93,7 @@ int main(int argc, char** argv) {
     return 2;
   }
   const std::filesystem::path scratch(argv[2]);
-  const auto path = [&](const char* name) { return (scratch / name).string(); };
+  const auto path = [&](const char* name) { return scratch / name; };
   assert(!std::getenv("DISPLAY") && !std::getenv("DBUS_SESSION_BUS_ADDRESS"));
   assert(!std::filesystem::exists("/dev/snd") && !std::filesystem::exists("/run/user"));
   if (!std::filesystem::create_directory(scratch)) {
@@ -104,6 +105,14 @@ int main(int argc, char** argv) {
   RuntimeConfig config{argv[1], path("synthetic.wav"), path("synthetic.wav")};
   std::vector<float> clip;
   assert(LoadClip(config.friendly_wav_path, clip) == Diagnostic::Count && clip.size() == 997);
+  const auto unicode_wav = scratch / std::filesystem::path(u"synthetic-\u97f3\u58f0.wav");
+  Save(unicode_wav, bytes);
+  assert(LoadClip(unicode_wav, clip) == Diagnostic::Count && clip.size() == 997);
+  config.friendly_wav_path = unicode_wav;
+  auto unicode_library = scratch / std::filesystem::path(u"sdk-\u97f3\u58f0");
+  unicode_library += config.library_path.extension();
+  std::filesystem::copy_file(config.library_path, unicode_library);
+  config.library_path = unicode_library;
   assert(LoadClip(path("missing.wav"), clip) == Diagnostic::AssetOpen);
   auto bad = bytes;
   Put32(bad, 4, 0xffffffff);

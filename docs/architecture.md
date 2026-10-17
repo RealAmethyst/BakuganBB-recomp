@@ -8,7 +8,7 @@
 
 `src/runtime` binds the host to ReXGlue and transports runtime UI events. It depends on the patched SDK and, for the host, private generated image configuration. Runtime integration is separate from OS-specific process supervision; it is not classified as portable core merely because the SDK abstracts some platforms.
 
-`src/platform/linux/launch.py` owns Linux launch locking, child-process supervision and installation paths. There is no Windows or macOS launcher yet. New platforms should implement their own OS boundary and share the existing event/speech policy where its contracts remain valid.
+`src/platform/linux/launch.py` and `src/platform/windows/launch.py` own their platform's launch locking and installation paths. `src/platform/common/launch_support.py` shares child-process supervision, event routing and speech policy. Windows uses an external game-directory configuration instead of a symlink. There is no macOS launcher. Platform build and fixture evidence does not establish gameplay or audible speech.
 
 ## Sources and installed layout
 
