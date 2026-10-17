@@ -10,7 +10,7 @@ Input and audio are working, but this is still very early. Expect crashes and un
 
 ## Building
 
-There isn't a prebuilt release yet. You can build the game locally on Linux using your own game files. Follow the [build guide](docs/building.md) for the required tools and steps.
+There isn't a prebuilt release yet. You can build the game locally using your own game files. Follow the [Linux build guide](docs/building.md) to build for Linux or the [Windows build guide](docs/building-windows.md) to build for Windows.
 
 Developers can already run the automated code checks with `python3 tools/run_tests.py`. These checks don't run the game or need game files. The build guide lists the tools needed to run them.
 
