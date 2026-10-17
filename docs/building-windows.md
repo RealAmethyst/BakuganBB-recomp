@@ -12,7 +12,7 @@ repository. Do not upload game inputs, translated code or native game binaries t
 GitHub Actions, issues, caches, artifacts or releases. These commands do not
 launch the game or load a screen reader.
 
-Use Windows x64, a CPU supporting x86-64-v2, Git, Python 3.12, CMake 3.25 or newer,
+Use Windows 10 or newer on x64, a CPU supporting x86-64-v2, Git, Python 3.12, CMake 3.25 or newer,
 Ninja, LLVM/Clang and Visual Studio's x64 C++ build tools and Windows SDK.
 Run PowerShell 7 in an x64 Visual Studio developer environment so `cl`, `link`,
 `midl`, `dumpbin`, `clang`, `clang++` and `llvm-readobj` are on PATH. The initial
@@ -140,7 +140,9 @@ python "$work/game/launch.py" --check
 
 Staging requires a new output directory. It checks the Windows backend
 configuration, audits binary architecture and dependencies without loading the
-DLLs, and retains the license notices. `game-data.json` points to the external
+DLLs, and retains the license notices. Virtual Windows API-set imports are
+checked with the OS availability query; missing physical DLLs and unavailable
+contracts remain errors. See [Microsoft's API-set contract](https://learn.microsoft.com/en-us/windows/win32/apiindex/windows-apisets). `game-data.json` points to the external
 game directory; no administrator access, junction or symbolic link is required.
 The check-only launcher does not load Prism, launch a process or create user data.
 

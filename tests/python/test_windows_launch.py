@@ -30,6 +30,7 @@ staging = load_module("stage_launcher", SOURCE / "tools/stage_launcher.py")
 
 class WindowsLauncherTests(unittest.TestCase):
     def installation(self, parent):
+        parent = parent.resolve()
         root = parent / "synthetic install"
         data = parent / "synthetic game \u00e6"
         (root / "bin").mkdir(parents=True)

@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Inspect runtime imports only; never load or execute the application or Prism.
 cmake_minimum_required(VERSION 3.25)
+if(POLICY CMP0207)
+  cmake_policy(SET CMP0207 NEW)
+endif()
 
 if(NOT CMAKE_HOST_WIN32)
   message(FATAL_ERROR "Windows runtime dependency inspection requires Windows")
 endif()
-foreach(required SEARCH_DIRECTORY LIBRARIES OUTPUT)
+foreach(required SEARCH_DIRECTORY LIBRARIES OUTPUT UNRESOLVED_OUTPUT)
   if(NOT DEFINED ${required} OR "${${required}}" STREQUAL "")
     message(FATAL_ERROR "Missing runtime inspection argument: ${required}")
   endif()
@@ -34,9 +37,6 @@ file(GET_RUNTIME_DEPENDENCIES
   UNRESOLVED_DEPENDENCIES_VAR unresolved
   CONFLICTING_DEPENDENCIES_PREFIX conflicts
   POST_EXCLUDE_FILES ${system_libraries})
-if(unresolved)
-  message(FATAL_ERROR "Unresolved Windows runtime imports: ${unresolved}")
-endif()
 if(conflicts_FILENAMES)
   message(FATAL_ERROR "Conflicting Windows runtime imports: ${conflicts_FILENAMES}")
 endif()
@@ -52,3 +52,7 @@ foreach(dependency IN LISTS resolved)
 endforeach()
 list(JOIN resolved "\n" report)
 file(WRITE "${OUTPUT}" "${report}")
+# The Python caller must validate every unresolved name. API-set contracts may
+# have no disk file; only the documented OS availability query can accept them.
+list(JOIN unresolved "\n" unresolved_report)
+file(WRITE "${UNRESOLVED_OUTPUT}" "${unresolved_report}")

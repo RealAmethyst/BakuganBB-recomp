@@ -3,6 +3,7 @@
 """Prepare a private local installation from built code and user-owned game files."""
 
 import argparse
+import ctypes
 import json
 import os
 from pathlib import Path
@@ -33,6 +34,7 @@ def runpath(path):
 
 
 WINDOWS_BACKENDS = {"NVDA", "JAWS", "ZOOM_TEXT", "SENSE_READER", "PC_TALKER", "ZDSR", "BOY_PC_READER"}
+LOAD_LIBRARY_SEARCH_SYSTEM32 = 0x00000800
 
 
 def default_platform():
@@ -56,8 +58,33 @@ def check_prism_backends(cache, platform):
         raise ValueError("Prism must enable exactly the selected platform's screen-reader backends")
 
 
+def check_windows_api_sets(unresolved):
+    """Query Windows for virtual contracts; never load an inspected binary."""
+    if not unresolved:
+        return
+    contracts = set()
+    for name in unresolved:
+        name = name.lower()
+        if not re.fullmatch(r"(?:api|ext)-[a-z0-9-]+(?:~[a-z0-9-]+)?\.dll", name):
+            raise ValueError(f"Unresolved Windows runtime import: {name}")
+        contracts.add(name[:-4])
+    try:
+        # Microsoft apiquery2.h: BOOL APIENTRY IsApiSetImplemented(PCSTR).
+        # The OS resolves this fixed API-set name; no build directory is searched.
+        api = ctypes.WinDLL("api-ms-win-core-apiquery-l2-1-0.dll",
+                            winmode=LOAD_LIBRARY_SEARCH_SYSTEM32)
+        query = api.IsApiSetImplemented
+        query.argtypes = [ctypes.c_char_p]
+        query.restype = ctypes.c_int
+        for contract in sorted(contracts):
+            if not query(contract.encode("ascii")):
+                raise ValueError(f"Windows API-set contract is unavailable: {contract}")
+    except (OSError, AttributeError) as error:
+        raise ValueError("Windows API-set availability query failed") from error
+
+
 def audit_windows_runtime(native=None, prism_build=None):
-    """Inspect PE files without executing them or loading a library."""
+    """Inspect PE files and OS contracts without loading game or speech libraries."""
     if sys.platform != "win32":
         raise ValueError("Windows dependency inspection must run on Windows")
     groups = []
@@ -74,13 +101,16 @@ def audit_windows_runtime(native=None, prism_build=None):
             if ";" in str(directory):
                 raise ValueError("CMake runtime inspection does not support semicolons in build paths")
             report = Path(temporary) / (destination + ".txt")
+            unresolved_report = Path(temporary) / (destination + "-unresolved.txt")
             command = ["cmake", "-DSEARCH_DIRECTORY=" + str(directory),
                        "-DLIBRARIES=" + ";".join(str(path) for path in libraries),
-                       "-DOUTPUT=" + str(report)]
+                       "-DOUTPUT=" + str(report),
+                       "-DUNRESOLVED_OUTPUT=" + str(unresolved_report)]
             if executable is not None:
                 command.append("-DEXECUTABLE=" + str(executable))
             command += ["-P", str(ROOT / "cmake/StageWindowsRuntime.cmake")]
             subprocess.run(command, check=True)
+            check_windows_api_sets(unresolved_report.read_text(encoding="utf-8").splitlines())
             dependencies = [Path(line).resolve(strict=True)
                             for line in report.read_text(encoding="utf-8").splitlines()]
             binaries = libraries + ([executable] if executable is not None else [])
