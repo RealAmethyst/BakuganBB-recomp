@@ -1,21 +1,21 @@
 #pragma once
 
+#include <filesystem>
 #include <memory>
-#include <string>
 
 #include "../core/spatial_audio.h"
 
 namespace brawlers::audio {
 
 struct RuntimeConfig {
-  std::string library_path;
+  std::filesystem::path library_path;
   // Mono IEEE float32 RIFF WAV, 48 kHz, <=30 seconds/16 MiB, finite peak<=1.
   // Single approved cycles: runtime supplies equally long silent intervals.
-  std::string friendly_wav_path;
-  std::string enemy_wav_path;
+  std::filesystem::path friendly_wav_path;
+  std::filesystem::path enemy_wav_path;
 };
 
-// Linux native output, independent of the guest audio device/stream. The owner
+// Native SDL output, independent of the guest audio device/stream. The owner
 // serializes Start/Stop/destruction outside guest locks. Keep this object alive
 // until all capture producers have joined; Stop rejects them before freeing DSP.
 // Single-use: initialization and restart are never attempted in a callback.

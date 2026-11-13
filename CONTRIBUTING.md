@@ -8,7 +8,9 @@ Read the [architecture](docs/architecture.md), [build guide](docs/building.md) a
 
 ## Content boundary
 
-Do not submit game executables, extracted assets, raw decompilation, generated proprietary code, shaders or shader caches derived from the game, native game binaries, private logs, personal machine paths or acquisition instructions. Keep private inputs and build outputs outside the checkout. Do not attach them to issues, pull requests, Actions artifacts or releases.
+Do not submit game executables, extracted assets, raw decompilation, generated proprietary code, shaders or shader caches derived from the game, native game binaries, private logs, personal machine paths or acquisition instructions. Keep private inputs and build outputs outside the checkout. Do not attach them to issues, pull requests or Actions artifacts.
+
+Release packages are the one exception for compiled binaries. The project owner publishes them following the [release guide](docs/releasing.md). They contain the compiled program, never game files or generated source; the launcher asks each player for their own game files. Contributors do not upload their own builds.
 
 Use independently authored synthetic fixtures. Describe verified behavior and cite executable identity and code locations without copying proprietary implementations. Inspect the actual proposed files and history; `.gitignore` is not a content audit. Preserve third-party notices and review licenses before reuse. Original contributions use the project's [BSD-3-Clause license](LICENSE).
 

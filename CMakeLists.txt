@@ -27,13 +27,19 @@ if(BUILD_TESTING)
         add_test(NAME ${fixture} COMMAND test_${fixture})
     endforeach()
 
-    # Launcher fixtures require Linux locking and the isolated Linux runner.
-    # Other platforms can build the core, but have not been validated here.
+    # Linux tests need the isolated runner; Windows policy tests run on CI VMs.
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
         add_test(NAME python_contracts
             COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_tests.py" --python-only)
+    elseif(WIN32)
+        find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
+        add_executable(windowed_stdio_probe WIN32 tests/native/windowed_stdio_probe.cpp)
+        add_test(NAME windowed_stdio
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/build/check_windows_stdio.py"
+                "$<TARGET_FILE:windowed_stdio_probe>")
     endif()
 endif()
 

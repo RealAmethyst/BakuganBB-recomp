@@ -29,6 +29,7 @@ def inside_sandbox():
 def python_tests():
     paths = [
         SOURCE / "src/platform/linux",
+        SOURCE / "src/platform/common",
         SOURCE / "src/core/accessibility",
         SOURCE / "tests/python",
     ]

@@ -1,5 +1,6 @@
 """Original process fixtures; never execute or load game code."""
 
+import hashlib
 import json
 import io
 from pathlib import Path
@@ -9,7 +10,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import launch
+if sys.platform == "win32":
+    import launch_support as launch
+else:
+    import launch
+import game_files
 from test_keyboard_speech import event, Speech
 from test_screen_speech import event as screen_event
 
@@ -17,15 +22,37 @@ from test_screen_speech import event as screen_event
 MESSAGES = Path(__file__).resolve().parents[2] / "resources" / "messages.en.json"
 
 
+PLACEHOLDER = b"Original synthetic executable placeholder; never run."
+
+
+def synthetic_identity(test):
+    """Make the placeholder the supported executable for one test."""
+    for name, value in (("EXECUTABLE_SIZE", len(PLACEHOLDER)),
+                        ("EXECUTABLE_SHA256", hashlib.sha256(PLACEHOLDER).hexdigest())):
+        patcher = patch.object(game_files, name, value)
+        patcher.start()
+        test.addCleanup(patcher.stop)
+
+
+def synthetic_game(directory):
+    (directory / "media").mkdir(parents=True)
+    (directory / "default.xex").write_bytes(PLACEHOLDER)
+    return directory
+
+
 class RecordingReporter:
     def __init__(self):
         self.events = []
+        self.messages = json.loads(MESSAGES.read_text(encoding="utf-8"))
 
     def report(self, key, **kwargs):
         self.events.append((key, kwargs))
 
 
 class SupervisorTests(unittest.TestCase):
+    def setUp(self):
+        synthetic_identity(self)
+
     def test_option_message_transport_and_log_redaction(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -70,9 +97,8 @@ class SupervisorTests(unittest.TestCase):
 
     def installation(self, root):
         (root / "bin").mkdir()
-        (root / "data").mkdir()
-        for name in ["bin/battle-brawlers", "bin/librexruntime.so", "bin/librexgpu-xenos.so",
-                     "data/default.xex"]:
+        synthetic_game(root / "data")
+        for name in ["bin/battle-brawlers", "bin/librexruntime.so", "bin/librexgpu-xenos.so"]:
             (root / name).touch(mode=0o700)
 
     def run_fixture(self, script):
@@ -133,7 +159,8 @@ class SupervisorTests(unittest.TestCase):
     def test_signal_exit_is_reported(self):
         code, events, log = self.run_fixture("import os, signal; os.kill(os.getpid(), signal.SIGTERM)")
         self.assertEqual((code, events), (1, ["process_failed"]))
-        self.assertIn("Host process exit: -15", log)
+        expected = 15 if sys.platform == "win32" else -15
+        self.assertIn(f"Host process exit: {expected}", log)
 
     def test_error_deduplicates_and_unknown_events_are_not_announced(self):
         code, events, log = self.run_fixture(
@@ -186,6 +213,7 @@ class SupervisorTests(unittest.TestCase):
             events = [key for key, _ in reporter.events]
             self.assertEqual(events, ["log_failed", "thread_created", "closed"])
 
+    @unittest.skipUnless(sys.platform == "linux", "Linux installation boundary")
     def test_incomplete_installation_never_spawns(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(subprocess, "Popen") as spawn:
             reporter = RecordingReporter()
@@ -193,6 +221,7 @@ class SupervisorTests(unittest.TestCase):
             spawn.assert_not_called()
             self.assertEqual(reporter.events[0][0], "missing_files")
 
+    @unittest.skipUnless(sys.platform == "linux", "Linux installation boundary")
     def test_check_never_spawns_or_creates_user_data(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(subprocess, "Popen") as spawn:
             root = Path(directory)
@@ -201,6 +230,7 @@ class SupervisorTests(unittest.TestCase):
             spawn.assert_not_called()
             self.assertFalse((root / "user-data").exists())
 
+    @unittest.skipUnless(sys.platform == "linux", "Linux installation boundary")
     def test_storage_setup_failure_is_reported_without_spawning(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(subprocess, "Popen") as spawn:
             root = Path(directory)
@@ -215,6 +245,7 @@ class SupervisorTests(unittest.TestCase):
                 self.assertIn("writable storage", output.getvalue())
             spawn.assert_not_called()
 
+    @unittest.skipUnless(sys.platform == "linux", "Linux installation boundary")
     def test_existing_launch_lock_prevents_second_process(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(subprocess, "Popen") as spawn:
             root = Path(directory)
@@ -226,6 +257,64 @@ class SupervisorTests(unittest.TestCase):
                 self.assertEqual(launch.launch(root, reporter), 1)
             self.assertEqual(reporter.events[0][0], "already_running")
             spawn.assert_not_called()
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux installation boundary")
+    def test_check_without_game_directory_reports_without_asking(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.installation(root)
+            (root / "data/default.xex").unlink()
+            reporter = RecordingReporter()
+            with patch.object(launch, "request") as request:
+                self.assertEqual(launch.launch(root, reporter, check=True), 1)
+            request.assert_not_called()
+            self.assertEqual([key for key, _ in reporter.events], ["game_files_not_chosen"])
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux installation boundary")
+    def test_first_launch_asks_and_uses_the_chosen_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "install"
+            root.mkdir()
+            self.installation(root)
+            (root / "data/default.xex").unlink()
+            chosen = Path(directory) / "synthetic game"
+            reporter = RecordingReporter()
+            with patch.object(launch, "request", return_value=chosen) as request, \
+                    patch.object(launch, "supervise", return_value=0) as supervise:
+                self.assertEqual(launch.launch(root, reporter), 0)
+            request.assert_called_once_with(root, reporter, launch.choose_directory)
+            self.assertIn(f"--game_data_root={chosen}", supervise.call_args.args[0])
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux installation boundary")
+    def test_cancelled_request_never_spawns_or_creates_user_data(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(subprocess, "Popen") as spawn:
+            root = Path(directory)
+            self.installation(root)
+            (root / "data/default.xex").unlink()
+            with patch.object(launch, "request", return_value=None):
+                self.assertEqual(launch.launch(root, RecordingReporter()), 1)
+            spawn.assert_not_called()
+            self.assertFalse((root / "user-data").exists())
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux installation boundary")
+    def test_remembered_directory_precedes_staged_data_and_option_is_verified(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "install"
+            root.mkdir()
+            self.installation(root)
+            self.assertEqual(launch.game_directory(root), (root / "data").absolute())
+            (root / "data/default.xex").write_bytes(b"Another version.")
+            self.assertIsNone(launch.game_directory(root))
+            (root / "data/default.xex").write_bytes(PLACEHOLDER)
+            remembered = synthetic_game(Path(directory).resolve() / "remembered")
+            (root / "game-data.json").write_text(json.dumps({"path": str(remembered)}))
+            self.assertEqual(launch.game_directory(root), remembered)
+            reporter = RecordingReporter()
+            with patch.object(launch, "accept", return_value=None) as accept, \
+                    patch.object(launch, "supervise") as supervise:
+                self.assertEqual(launch.launch(root, reporter, game_dir="synthetic choice"), 1)
+            accept.assert_called_once_with(root, reporter, "synthetic choice")
+            supervise.assert_not_called()
 
     def test_all_events_have_localized_messages(self):
         messages = json.loads(MESSAGES.read_text(encoding="utf-8"))

@@ -2,8 +2,8 @@
 
 #include <SDL3/SDL_audio.h>
 #include <SDL3/SDL_init.h>
+#include <SDL3/SDL_loadso.h>
 #include <phonon.h>
-#include <dlfcn.h>
 
 #include <algorithm>
 #include <array>
@@ -28,7 +28,7 @@ uint32_t U32(const unsigned char* p) {
 }
 
 // Only startup calls this parser. Unknown, bounded RIFF chunks are skipped.
-Diagnostic LoadClip(const std::string& path, std::vector<float>& output) {
+Diagnostic LoadClip(const std::filesystem::path& path, std::vector<float>& output) {
   std::ifstream file(path, std::ios::binary | std::ios::ate);
   if (!file) return Diagnostic::AssetOpen;
   const auto end = file.tellg();
@@ -77,7 +77,7 @@ Diagnostic LoadClip(const std::string& path, std::vector<float>& output) {
 }
 
 struct SteamApi {
-  void* library = nullptr;
+  SDL_SharedObject* library = nullptr;
 #define STEAM_FUNCTION(name) decltype(&::name) name = nullptr
   STEAM_FUNCTION(iplContextCreate);
   STEAM_FUNCTION(iplContextRelease);
@@ -88,13 +88,14 @@ struct SteamApi {
   STEAM_FUNCTION(iplBinauralEffectReset);
   STEAM_FUNCTION(iplBinauralEffectApply);
 #undef STEAM_FUNCTION
-  ~SteamApi() { if (library) dlclose(library); }
-  Diagnostic Load(const std::string& path) {
+  ~SteamApi() { if (library) SDL_UnloadObject(library); }
+  Diagnostic Load(const std::filesystem::path& path) {
     if (path.empty()) return Diagnostic::SdkLoad;
-    library = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    const auto utf8 = path.u8string();
+    library = SDL_LoadObject(reinterpret_cast<const char*>(utf8.c_str()));
     if (!library) return Diagnostic::SdkLoad;
 #define LOAD_STEAM(name) \
-    name = reinterpret_cast<decltype(name)>(dlsym(library, #name)); \
+    name = reinterpret_cast<decltype(name)>(SDL_LoadFunction(library, #name)); \
     if (!name) return Diagnostic::SdkSymbol
     LOAD_STEAM(iplContextCreate);
     LOAD_STEAM(iplContextRelease);

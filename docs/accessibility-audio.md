@@ -172,3 +172,32 @@ The streaming lookup `823B28F0` uses root filenames below index `43` hexadecimal
 Thirty-two remaining root streams need content classification: five `j_` entries, one `b_powbtl` entry and 26 `vmc` entries. A discrete request for one `j_` entry is verified at `82368394`, but event-triggered playback does not establish whether its content is musical. No verified consumer establishes that all `vmc` entries are dialogue or that `b_powbtl` is an effect. They are excluded from the effects/ambience catalogue; do not describe that catalogue as every possible nonmusical sound in the game.
 
 Private evidence collection `accessibility-audio-20261014` retains the original exports, format audits, scripts, conversion logs and manifests. No RE database annotations were added. Extracted banks, wrappers, WAVs, playlists and manifests remain outside the repository; the public research record contains no audio payloads.
+
+## Windows portability evidence, 2026-10-17
+
+The optional runtime uses SDL3's shared-library loader and native filesystem
+paths. The pinned SDL revision `8bf3b7215ad9fc3deb583c6a3a37c6c67f2e24e4`
+converts UTF-8 library paths to UTF-16 on Windows; its Linux implementation
+retains `dlopen` with `RTLD_NOW | RTLD_LOCAL`. Steam Audio function pointers
+retain the header's Windows calling convention.
+
+The official Steam Audio 4.8.1 archive's SHA-256 is
+`4a0aa5ec1176f38f0b0993a37c2259d9e86f27e22d5e24f83ec4c3cb9a1d5449`.
+Read-only inspection of `lib/windows-x64/phonon.dll`, SHA-256
+`ca3dbc01dbc24492717011e80f6a51404ca143ae344ca660971d2c983f1e058d`,
+confirmed AMD64 and all eight API exports consumed by this engine. Normal
+imports are KERNEL32, ole32 and ADVAPI32. Delay imports include OpenCL,
+GPUUtilities and TrueAudioNext; the current binaural engine does not request
+GPU devices. This is binary/source inspection, not Windows runtime validation.
+
+The SDK archive includes `THIRDPARTY.md`; retain it and the
+[upstream license](https://github.com/ValveSoftware/steam-audio/blob/v4.8.1/LICENSE.md)
+with any private installation. Do not describe all bundled code as Apache-only.
+The [Windows build guide](building-windows.md) describes the optional build
+boundary; automatic staging of private cue resources remains deferred.
+
+An isolated Linux ASan/UBSan run using actual Steam Audio and the pinned SDL
+loader passed the existing synthetic DSP/failure checks plus Unicode library
+and WAV filenames. The fixture linked shared SDL for loading and replaced audio
+device operations with aborting stubs; no output-device call occurred. This
+preserves offline coverage without establishing Windows speech or audio output.

@@ -1,5 +1,7 @@
 # Building on Linux
 
+For the Windows development path, see [Building on Windows](building-windows.md).
+
 ## Before you start
 
 This guide builds the game locally from your own files. It does not download game files or provide a prebuilt game. Keep the game, dependencies, generated code and build output outside this repository. Do not upload the resulting installation or generated files.
@@ -71,7 +73,7 @@ cmake -S "$PROJECT_SOURCE" -B "$WORK/native-build" -G Ninja \
 cmake --build "$WORK/native-build" --target battle-brawlers --parallel 2
 ```
 
-The translation directory contains private generated game code and generation logs. The native output is under `WORK/native-build/native`. Neither belongs in a commit, issue attachment or release upload.
+The translation directory contains private generated game code and generation logs. The native output is under `WORK/native-build/native`. Neither belongs in a commit or issue attachment. Only the project owner publishes compiled packages, as the [release guide](releasing.md) describes.
 
 If generation fails, inspect `translation/codegen.log`. The tool preserves failed output for diagnosis; choose a new output directory for another attempt. Do not bypass an executable identity failure.
 
@@ -132,9 +134,9 @@ The check command checks required files without starting the game or speech. Whe
 python3 "$WORK/game/launch.py"
 ```
 
-Speech goes to an already running Orca. Without one, the launcher remains silent. Writable settings, saves, caches and logs stay under `WORK/game/user-data`. Keep the original game directory available while using this installation.
+Speech goes to an already running Orca. Without one, the launcher remains silent. An installation without a linked game directory asks for one on first start, as the [player guide](playing.md) describes. Writable settings, saves, caches and logs stay under `WORK/game/user-data`. Keep the original game directory available while using this installation.
 
-This produces a local build, not a portable release package. It has not been tested across Linux distributions. A future downloadable application that asks for game files needs separate packaging, compatibility and distribution work.
+This produces a local build tied to your system's libraries, not a portable release package. Downloadable packages are built against an older baseline and assembled separately; see the [release guide](releasing.md).
 
 ## Automated code checks
 
@@ -173,6 +175,49 @@ python3 tests/runtime/native_vs_regressions.py "$WORK/rexglue" \
 
 They compile with AddressSanitizer and UndefinedBehaviorSanitizer. Passing them
 does not establish complete menu coverage or in-game listening usability.
+
+## Windows build checks
+
+The [Windows workflow](../.github/workflows/windows-build.yml) prepares three
+independent jobs on standard GitHub-hosted Windows x64 virtual machines:
+
+- Compile the shared core with Clang and run the eight native synthetic fixtures,
+  plus the Windows GUI-subsystem pipe probe and Python launcher, staging and
+  speech-policy fixtures with simulated screen readers.
+- Build and install the pinned, patched ReXGlue generator and Vulkan runtime,
+  then compile and link the actual host against original synthetic guest stand-ins.
+  Both ordinary and optional spatial-audio host configurations are compiled.
+  Runtime PE imports and architecture are inspected. The synthetic host is never run.
+- Compile the pinned, patched Prism library with Windows screen-reader backends
+  enabled and standalone text-to-speech disabled. The job checks the selected
+  backends without loading the library or starting a screen reader.
+
+Pushes to `main`, pull requests, and manual dispatches trigger
+the workflow. Once it is present on the default branch, it
+can be started from Actions, Windows build checks, Run workflow, or with:
+
+```sh
+gh workflow run windows-build.yml --repo RealAmethyst/BakuganBB-recomp
+```
+
+The workflow uses only public source and original synthetic fixtures. It does
+not fetch game files or generate or compile proprietary game code. Its only
+upload is the audited Prism library, an open-source dependency build that
+[release packaging](releasing.md) consumes. No caches are used. Dependency revisions come from the patch manifests. Git
+line-ending conversion is disabled in the disposable VMs so the patch checksum
+checks inspect the original bytes.
+
+Standard hosted runner execution is
+[free for public repositories](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
+The workflow does not request larger runners or change billing settings.
+
+These checks do not build translated game code. The
+[Windows guide](building-windows.md) describes private generation, native linking,
+launcher and staging. A successful run
+would establish only the checks listed above. Windows testers must later build
+the game locally using their own files and verify speech, audio, controller
+input and graphics. [Issue 38](https://github.com/RealAmethyst/BakuganBB-recomp/issues/38)
+tracks that work and actual run results.
 
 ## Verification so far
 

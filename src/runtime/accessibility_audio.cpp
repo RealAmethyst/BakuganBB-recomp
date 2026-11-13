@@ -24,10 +24,15 @@ SpatialAudioRuntime& AccessibilityAudio() {
 
 bool InitializeAccessibilityAudio(const std::filesystem::path& installation) {
   try {
+#ifdef _WIN32
+    constexpr auto library_name = "phonon.dll";
+#else
+    constexpr auto library_name = "libphonon.so";
+#endif
     const RuntimeConfig config{
-        (installation / "bin/libphonon.so").string(),
-        (installation / "accessibility-audio/gate-friendly.wav").string(),
-        (installation / "accessibility-audio/gate-enemy.wav").string()};
+        installation / "bin" / library_name,
+        installation / "accessibility-audio/gate-friendly.wav",
+        installation / "accessibility-audio/gate-enemy.wav"};
     const bool started = AccessibilityAudio().Start(config);
     if (!started)
       ReportDiagnostics();

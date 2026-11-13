@@ -6,128 +6,29 @@ import fcntl
 import json
 import os
 from pathlib import Path
-import subprocess
 import sys
 import tempfile
 
+from folder_dialog import choose_directory
+from game_files import accept, inspect, request, saved_directory
 from prism_speech import PrismSpeech
-from keyboard_speech import KeyboardSpeech, PREFIX as UI_PREFIX, parse_event
-from screen_speech import ScreenSpeech, PREFIX as SCREEN_PREFIX, parse_event as parse_screen
+from launch_support import EVENTS, PREFIX, SPOKEN_EVENTS, Reporter, supervise
 
 
-PREFIX = "BRAWLERS_STATUS:"
-EVENTS = {
-    "environment", "graphics", "runtime", "image_loaded", "preparing_thread",
-    "thread_created", "guest_exited", "environment_failed", "graphics_failed",
-    "runtime_failed", "runtime_error", "audio_unavailable", "spatial_audio_unavailable",
-    "settings_unavailable", "settings_save_failed_on_exit", "settings_apply_failed_on_exit",
-}
-SPOKEN_EVENTS = {"environment_failed", "graphics_failed", "runtime_failed", "runtime_error",
-                 "audio_unavailable", "spatial_audio_unavailable", "settings_unavailable",
-                 "settings_save_failed_on_exit", "settings_apply_failed_on_exit"}
-
-
-class Reporter:
-    def __init__(self, messages, speech=None):
-        self.messages = messages
-        self.speech = speech
-        self.dialogs = KeyboardSpeech(messages, speech)
-        self.screens = ScreenSpeech(messages, speech)
-
-    def report(self, key, *, speak=True, **values):
-        text = self.messages[key].format(**values)
-        print(text, flush=True)
-        if not speak or self.speech is None:
-            return
-        self.speech.speak(text, interrupt=False)
-
-
-def supervise(command, cwd, log_path, reporter):
-    """Return failure for explicit runtime errors even with a zero child exit."""
-    seen = set()
-    try:
-        log = log_path.open("x", encoding="utf-8")
-    except OSError:
-        reporter.report("storage_failed")
-        return 1
-    storage_failed = False
-
-    def record(text):
-        nonlocal storage_failed
-        if storage_failed:
-            return
-        try:
-            log.write(text)
-            log.flush()
-        except OSError:
-            storage_failed = True
-            reporter.report("log_failed")
-
-    try:
-        try:
-            child = subprocess.Popen(
-                command, cwd=cwd, stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, encoding="utf-8", errors="replace", bufsize=1,
-            )
-        except OSError as error:
-            record(f"Process creation failed: {error}\n")
-            reporter.report("launch_failed")
-            return 1
-        with child.stdout:
-            for line in child.stdout:
-                # Continue draining and owning the process if the disk fills.
-                if line.startswith(SCREEN_PREFIX):
-                    event = parse_screen(line[len(SCREEN_PREFIX):])
-                    if event is None:
-                        record("BRAWLERS_SCREEN:invalid event; text omitted\n")
-                    else:
-                        record(f"BRAWLERS_SCREEN:{event['source']} {event['kind']} "
-                               f"id={event['id']}; text omitted\n")
-                        screens = getattr(reporter, "screens", None)
-                        if screens is not None:
-                            screens.handle(event)
-                    continue
-                if line.startswith(UI_PREFIX):
-                    event = parse_event(line[len(UI_PREFIX):])
-                    if event is None:
-                        record("BRAWLERS_UI:invalid event; text omitted\n")
-                    else:
-                        record(f"BRAWLERS_UI:{event['kind']} id={event['id']}; text omitted\n")
-                        dialogs = getattr(reporter, "dialogs", None)
-                        if dialogs is not None:
-                            dialogs.handle(event)
-                    continue
-                record(line)
-                if not line.startswith(PREFIX):
-                    continue
-                event = line[len(PREFIX):].strip()
-                if event in EVENTS and event not in seen:
-                    seen.add(event)
-                    reporter.report(event, speak=event in SPOKEN_EVENTS)
-        code = child.wait()
-        record(f"Host process exit: {code}\n")
-    finally:
-        try:
-            log.close()
-        except OSError:
-            if not storage_failed:
-                storage_failed = True
-                reporter.report("log_failed")
-    if code != 0:
-        reporter.report("process_failed")
-        return 1
-    if "thread_created" not in seen:
-        reporter.report("early_exit")
-        return 1
-    reporter.report("closed")
-    return int(storage_failed or bool(seen & SPOKEN_EVENTS))
+def game_directory(root):
+    """Prefer the remembered directory, then a locally staged data link."""
+    saved = saved_directory(root)
+    if saved is not None:
+        return saved
+    staged = (root / "data").absolute()
+    return staged if inspect(staged) == "ok" else None
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-speech", action="store_true")
     parser.add_argument("--check", action="store_true", help="Check files without launching or speaking")
+    parser.add_argument("--game-dir", help="Directory containing your own game files; verified and remembered")
     args = parser.parse_args()
     root = Path(__file__).resolve().parent
     messages = json.loads((root / "messages.en.json").read_text(encoding="utf-8"))
@@ -140,7 +41,7 @@ def main():
             print(str(error), file=sys.stderr)
     reporter = Reporter(messages, speech=speech)
     try:
-        return launch(root, reporter, check=args.check)
+        return launch(root, reporter, check=args.check, game_dir=args.game_dir)
     except OSError:
         reporter.report("storage_failed")
         return 1
@@ -149,15 +50,27 @@ def main():
             speech.close()
 
 
-def launch(root, reporter, *, check=False):
+def launch(root, reporter, *, check=False, game_dir=None):
     host = root / "bin" / "battle-brawlers"
-    required = [host, root / "bin/librexruntime.so", root / "bin/librexgpu-xenos.so",
-                root / "data/default.xex"]
+    required = [host, root / "bin/librexruntime.so", root / "bin/librexgpu-xenos.so"]
     if any(not path.is_file() for path in required) or not os.access(host, os.X_OK):
         reporter.report("missing_files")
         return 1
+    if game_dir is not None:
+        data = accept(root, reporter, game_dir)
+        if data is None:
+            return 1
+    else:
+        data = game_directory(root)
+    if data is None and check:
+        reporter.report("game_files_not_chosen")
+        return 1
     if check:
         return 0
+    if data is None:
+        data = request(root, reporter, choose_directory)
+        if data is None:
+            return 1
     user = root / "user-data"
     logs = user / "logs"
     logs.mkdir(parents=True, exist_ok=True)
@@ -171,7 +84,7 @@ def launch(root, reporter, *, check=False):
         log = session / "console.log"
         reporter.report("starting")
         reporter.report("logs", speak=False, path=log)
-        command = [str(host), f"--game_data_root={root / 'data'}",
+        command = [str(host), f"--game_data_root={data}",
                    f"--user_data_root={user}", f"--cache_root={user / 'cache'}",
                    f"--log_file={session / 'runtime.log'}", "--log_level=info"]
         return supervise(command, root, log, reporter)

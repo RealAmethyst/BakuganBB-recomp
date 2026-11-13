@@ -17,11 +17,13 @@ with patch.object(sys, "path", [str(TOOLS), *sys.path]):
     import stage_game
 
 
-class StagingTests(unittest.TestCase):
+class StagingFixture(unittest.TestCase):
+    platform = "linux"
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        self.root = Path(temporary.name).resolve()
         self.inputs = {name: self.root / name for name in (
             "native-build", "prism-build", "prism-source", "rexglue-source", "game-dir")}
         for directory in self.inputs.values():
@@ -48,6 +50,7 @@ class StagingTests(unittest.TestCase):
         (self.inputs["native-build"] / "native/battle-brawlers").chmod(0o700)
 
         stack = ExitStack()
+        self.stack = stack
         self.addCleanup(stack.close)
         stack.enter_context(patch.object(stage_game, "EXECUTABLE_SIZE", len(self.game_bytes)))
         stack.enter_context(patch.object(stage_game, "EXECUTABLE_SHA256",
@@ -57,6 +60,8 @@ class StagingTests(unittest.TestCase):
             stack.enter_context(patch.object(stage_game.subprocess, function,
                                             side_effect=AssertionError("Process execution forbidden")))
         stack.enter_context(patch("ctypes.CDLL", side_effect=AssertionError("Library loading forbidden")))
+        stack.enter_context(patch("ctypes.WinDLL", create=True,
+                                  side_effect=AssertionError("Windows library loading forbidden")))
         stack.enter_context(patch.object(sys, "stdout", io.StringIO()))
         self.errors = stack.enter_context(patch.object(sys, "stderr", io.StringIO()))
 
@@ -69,10 +74,12 @@ class StagingTests(unittest.TestCase):
         arguments = ["stage_game.py"]
         for name, directory in self.inputs.items():
             arguments.extend(["--" + name, str(directory)])
-        arguments.extend(["--output", str(output)])
+        arguments.extend(["--output", str(output), "--platform", self.platform])
         with patch.object(sys, "argv", arguments):
             stage_game.main()
 
+
+class StagingTests(StagingFixture):
     def test_output_under_any_input_is_rejected_without_changes(self):
         before = self.snapshot_inputs()
         for name, directory in self.inputs.items():
@@ -85,6 +92,7 @@ class StagingTests(unittest.TestCase):
                 self.assertFalse(output.exists())
                 self.assertEqual(self.snapshot_inputs(), before)
 
+    @unittest.skipUnless(sys.platform == "linux", "Linux permissions and symlink installation")
     def test_new_installation_is_private_and_preserves_inputs(self):
         before = self.snapshot_inputs()
         output = self.root / "installation"
@@ -115,6 +123,180 @@ class StagingTests(unittest.TestCase):
         self.assertEqual(list(output.iterdir()), [original])
         self.assertEqual(original.read_bytes(), b"Existing original fixture.")
         self.assertEqual(self.snapshot_inputs(), before)
+
+
+class WindowsStagingTests(StagingTests):
+    platform = "windows"
+
+    def setUp(self):
+        super().setUp()
+        self.native = self.inputs["native-build"] / "native"
+        self.windows_files = {
+            "bin/battle-brawlers.exe": self.native / "battle-brawlers.exe",
+            "bin/rexruntime.dll": self.native / "rexruntime.dll",
+            "bin/rexgpu-xenos.dll": self.native / "rexgpu-xenos.dll",
+            "lib/prism.dll": self.inputs["prism-build"] / "prism.dll",
+        }
+        for path in self.windows_files.values():
+            path.write_bytes(b"Original synthetic Windows binary placeholder; never loaded.")
+        self.cache = self.inputs["prism-build"] / "CMakeCache.txt"
+        self.cache.write_text("".join(f"PRISM_ENABLE_{name}_BACKEND:STRING=ON\n"
+                                      for name in sorted(stage_game.WINDOWS_BACKENDS)) +
+                              "PRISM_ENABLE_ORCA_BACKEND:BOOL=OFF\n"
+                              "PRISM_ENABLE_SAPI_BACKEND:STRING=OFF\n", encoding="utf-8")
+        self.audit = self.stack.enter_context(patch.object(
+            stage_game, "audit_windows_runtime", return_value=dict(self.windows_files)))
+
+    def test_new_installation_is_private_and_preserves_inputs(self):
+        before = self.snapshot_inputs()
+        output = self.root / "installation with spaces \u00e6"
+        with patch.object(Path, "symlink_to", side_effect=AssertionError("No Windows symlinks")):
+            self.stage(output)
+        self.audit.assert_called_once_with(self.native, self.inputs["prism-build"])
+        self.assertEqual(self.snapshot_inputs(), before)
+        self.assertFalse((output / "data").exists())
+        self.assertEqual(json.loads((output / "game-data.json").read_text(encoding="utf-8")),
+                         {"path": str(self.inputs["game-dir"])})
+        self.assertEqual((output / "launch.py").read_bytes(),
+                         (stage_game.ROOT / "src/platform/windows/launch.py").read_bytes())
+        for target, source in self.windows_files.items():
+            self.assertEqual((output / target).read_bytes(), source.read_bytes())
+        self.assertEqual((output / "licenses/prism/LICENSES/nested/license.txt").read_bytes(),
+                         (self.inputs["prism-source"] / "LICENSES/nested/license.txt").read_bytes())
+        manifest = json.loads((output / "local-build.json").read_text(encoding="utf-8"))
+        self.assertFalse(manifest["game_executed"])
+        self.assertTrue(manifest["private_local_build"])
+        self.assertEqual(manifest["game_executable_sha256"], hashlib.sha256(self.game_bytes).hexdigest())
+        for relative, expected in manifest["files_sha256"].items():
+            self.assertEqual(hashlib.sha256((output / relative).read_bytes()).hexdigest(), expected)
+        self.assertIn("game-data.json", manifest["files_sha256"])
+
+    def test_only_audited_runtime_dependencies_are_copied(self):
+        dependency = self.native / "verified-dependency.dll"
+        dependency.write_bytes(b"Original audited dependency fixture.")
+        (self.native / "unrelated.dll").write_bytes(b"Original unrelated fixture.")
+        self.audit.return_value["bin/verified-dependency.dll"] = dependency
+        output = self.root / "installation"
+        self.stage(output)
+        self.assertEqual((output / "bin/verified-dependency.dll").read_bytes(), dependency.read_bytes())
+        self.assertFalse((output / "bin/unrelated.dll").exists())
+
+    def test_missing_reader_or_enabled_tts_fails_before_output_creation(self):
+        original = self.cache.read_text(encoding="utf-8")
+        variants = [original.replace("PRISM_ENABLE_NVDA_BACKEND:STRING=ON\n", ""),
+                    original.replace("PRISM_ENABLE_SAPI_BACKEND:STRING=OFF", "PRISM_ENABLE_SAPI_BACKEND:STRING=ON"),
+                    original.replace("PRISM_ENABLE_SAPI_BACKEND:STRING=OFF", "PRISM_ENABLE_SAPI_BACKEND:STRING=AUTO"),
+                    original + "PRISM_ENABLE_UNKNOWN_BACKEND:BOOL=ON\n"]
+        for cache in variants:
+            with self.subTest(cache=cache):
+                self.cache.write_text(cache, encoding="utf-8")
+                output = self.root / "installation"
+                with self.assertRaises(SystemExit):
+                    self.stage(output)
+                self.assertFalse(output.exists())
+        self.audit.assert_not_called()
+
+    def test_failed_runtime_audit_does_not_create_installation(self):
+        self.audit.side_effect = ValueError("Synthetic unresolved runtime dependency")
+        output = self.root / "installation"
+        with self.assertRaises(SystemExit):
+            self.stage(output)
+        self.assertFalse(output.exists())
+
+
+class WindowsAuditTests(StagingFixture):
+    def setUp(self):
+        super().setUp()
+        self.native = self.inputs["native-build"] / "native"
+        self.prism = self.inputs["prism-build"]
+        for path in (self.native / "battle-brawlers.exe", self.native / "rexruntime.dll",
+                     self.native / "rexgpu-xenos.dll", self.prism / "prism.dll"):
+            path.write_bytes(b"Synthetic file, inspected through mocked tools only.")
+        self.stack.enter_context(patch.object(stage_game.sys, "platform", "win32"))
+        self.headers = self.stack.enter_context(patch.object(stage_game.subprocess, "check_output",
+            return_value="Format: COFF-x86-64\nMachine: IMAGE_FILE_MACHINE_AMD64 (0x8664)\n"
+                         "ImageOptionalHeader {\n  Magic: 0x20B\n}"))
+        self.dependencies = []
+        self.unresolved = []
+        self.windows_api = self.stack.enter_context(patch.object(stage_game.ctypes, "WinDLL"))
+        self.query = self.windows_api.return_value.IsApiSetImplemented
+        self.query.return_value = 1
+
+        def report(command, **kwargs):
+            output = next(argument.removeprefix("-DOUTPUT=") for argument in command
+                          if argument.startswith("-DOUTPUT="))
+            Path(output).write_text("\n".join(str(path) for path in self.dependencies), encoding="utf-8")
+            unresolved_output = next(argument.removeprefix("-DUNRESOLVED_OUTPUT=") for argument in command
+                                     if argument.startswith("-DUNRESOLVED_OUTPUT="))
+            Path(unresolved_output).write_text("\n".join(self.unresolved), encoding="utf-8")
+
+        self.inspect = self.stack.enter_context(patch.object(stage_game.subprocess, "run", side_effect=report))
+
+    def test_native_and_prism_audits_can_run_independently(self):
+        native = stage_game.audit_windows_runtime(native=self.native)
+        self.assertEqual(set(native), {"bin/battle-brawlers.exe", "bin/rexruntime.dll", "bin/rexgpu-xenos.dll"})
+        prism = stage_game.audit_windows_runtime(prism_build=self.prism)
+        self.assertEqual(set(prism), {"lib/prism.dll"})
+        self.assertEqual(self.inspect.call_count, 2)
+        self.assertEqual(self.headers.call_count, 4)
+        self.windows_api.assert_not_called()
+
+    def test_implemented_virtual_api_set_is_queried_without_loading_prism(self):
+        self.unresolved = ["API-MS-WIN-CORE-SYNCH-L1-2-0.DLL"]
+        result = stage_game.audit_windows_runtime(prism_build=self.prism)
+        self.assertEqual(set(result), {"lib/prism.dll"})
+        self.windows_api.assert_called_once_with("api-ms-win-core-apiquery-l2-1-0.dll", winmode=0x00000800)
+        self.query.assert_called_once_with(b"api-ms-win-core-synch-l1-2-0")
+        self.assertEqual(self.query.argtypes, [stage_game.ctypes.c_char_p])
+        self.assertIs(self.query.restype, stage_game.ctypes.c_int)
+
+    def test_unimplemented_contract_is_rejected(self):
+        self.unresolved = ["ext-ms-win-synthetic-unavailable-l1-1-0.dll"]
+        self.query.return_value = 0
+        with self.assertRaisesRegex(ValueError, "contract is unavailable"):
+            stage_game.audit_windows_runtime(prism_build=self.prism)
+        self.headers.assert_not_called()
+
+    def test_unknown_or_malformed_library_is_not_accepted_as_system_contract(self):
+        for name in ("missing-runtime.dll", "../api-ms-win-synthetic-l1-1-0.dll",
+                     "api-ms-win-synthetic-l1-1-0.dll.extra", "api-ms-win-synthetic_1.dll"):
+            with self.subTest(name=name):
+                self.unresolved = [name]
+                with self.assertRaisesRegex(ValueError, "Unresolved Windows runtime import"):
+                    stage_game.audit_windows_runtime(prism_build=self.prism)
+        self.windows_api.assert_not_called()
+        self.headers.assert_not_called()
+
+    def test_query_library_or_export_failure_is_reported_and_fails_closed(self):
+        self.unresolved = ["api-ms-win-core-synch-l1-2-0.dll"]
+        for error in (OSError("Synthetic OS query load failure"), AttributeError("Synthetic missing export")):
+            with self.subTest(error=error):
+                self.windows_api.side_effect = error
+                with self.assertRaisesRegex(ValueError, "availability query failed"):
+                    stage_game.audit_windows_runtime(prism_build=self.prism)
+        self.headers.assert_not_called()
+
+    def test_query_call_failure_is_reported_and_fails_closed(self):
+        self.unresolved = ["api-ms-win-core-synch-l1-2-0.dll"]
+        self.query.side_effect = OSError("Synthetic query failure")
+        with self.assertRaisesRegex(ValueError, "availability query failed"):
+            stage_game.audit_windows_runtime(prism_build=self.prism)
+        self.headers.assert_not_called()
+
+    def test_dependency_outside_verified_output_is_rejected(self):
+        foreign = self.root / "foreign.dll"
+        foreign.write_bytes(b"Synthetic foreign dependency.")
+        self.dependencies = [foreign]
+        with self.assertRaisesRegex(ValueError, "outside"):
+            stage_game.audit_windows_runtime(prism_build=self.prism)
+
+    def test_wrong_architecture_or_object_without_pe_header_is_rejected(self):
+        for header in ("Format: COFF-i386\nMachine: IMAGE_FILE_MACHINE_I386 (0x14C)\n",
+                       "Format: COFF-x86-64\nMachine: IMAGE_FILE_MACHINE_AMD64 (0x8664)\n"):
+            with self.subTest(header=header):
+                self.headers.return_value = header
+                with self.assertRaisesRegex(ValueError, "x64 Windows PE"):
+                    stage_game.audit_windows_runtime(prism_build=self.prism)
 
 
 if __name__ == "__main__":
