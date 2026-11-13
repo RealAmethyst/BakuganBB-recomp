@@ -10,6 +10,7 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = (
     "src/platform/common/launch_support.py",
+    "src/platform/common/game_files.py",
     "src/core/accessibility/prism_speech.py",
     "src/core/accessibility/keyboard_speech.py",
     "src/core/accessibility/screen_speech.py",
@@ -28,7 +29,7 @@ def stage(destination, platform="linux"):
         raise ValueError("The staging directory must be outside the repository")
     if destination.exists() and (not destination.is_dir() or any(destination.iterdir())):
         raise ValueError("The staging directory must be empty or nonexistent")
-    sources = [ROOT / "src/platform" / platform / "launch.py"]
+    sources = [ROOT / "src/platform" / platform / name for name in ("launch.py", "folder_dialog.py")]
     sources += [ROOT / name for name in SOURCES]
     for source in sources:
         if not source.is_file():

@@ -5,25 +5,25 @@
 import argparse
 import errno
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
 
+from folder_dialog import choose_directory
+from game_files import accept, request, saved_directory
 from prism_speech import PrismSpeech
 from launch_support import EVENTS, PREFIX, SPOKEN_EVENTS, Reporter, supervise
 
 
-def game_directory(root):
-    try:
-        config = json.loads((root / "game-data.json").read_text(encoding="utf-8"))
-        if not isinstance(config, dict) or not isinstance(config.get("path"), str):
-            return None
-        path = Path(config["path"])
-        if path.is_absolute() and (path / "default.xex").is_file():
-            return path
-    except (OSError, ValueError):
-        pass
-    return None
+# Imported by the native binaries and installed by Microsoft's Visual C++
+# Redistributable; Windows itself does not include them.
+VC_RUNTIME = ("msvcp140.dll", "msvcp140_atomic_wait.dll", "vcruntime140.dll", "vcruntime140_1.dll")
+
+
+def vc_runtime_present(root):
+    system = Path(os.environ.get("SystemRoot", "")) / "System32"
+    return all((root / "bin" / name).is_file() or (system / name).is_file() for name in VC_RUNTIME)
 
 
 def lock_installation(lock):
@@ -42,15 +42,30 @@ def unlock_installation(lock):
     msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
 
 
-def launch(root, reporter, *, check=False):
+def launch(root, reporter, *, check=False, game_dir=None):
     host = root / "bin" / "battle-brawlers.exe"
     required = [host, root / "bin/rexruntime.dll", root / "bin/rexgpu-xenos.dll"]
-    data = game_directory(root)
-    if data is None or any(not path.is_file() for path in required):
+    if any(not path.is_file() for path in required):
         reporter.report("missing_files")
+        return 1
+    if not vc_runtime_present(root):
+        reporter.report("vc_runtime_missing")
+        return 1
+    if game_dir is not None:
+        data = accept(root, reporter, game_dir)
+        if data is None:
+            return 1
+    else:
+        data = saved_directory(root)
+    if data is None and check:
+        reporter.report("game_files_not_chosen")
         return 1
     if check:
         return 0
+    if data is None:
+        data = request(root, reporter, choose_directory)
+        if data is None:
+            return 1
     user = root / "user-data"
     logs = user / "logs"
     logs.mkdir(parents=True, exist_ok=True)
@@ -79,6 +94,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-speech", action="store_true")
     parser.add_argument("--check", action="store_true", help="Check files without launching or speaking")
+    parser.add_argument("--game-dir", help="Directory containing your own game files; verified and remembered")
     args = parser.parse_args()
     root = Path(__file__).resolve().parent
     messages = json.loads((root / "messages.en.json").read_text(encoding="utf-8"))
@@ -91,7 +107,7 @@ def main():
             print(str(error), file=sys.stderr)
     reporter = Reporter(messages, speech=speech)
     try:
-        return launch(root, reporter, check=args.check)
+        return launch(root, reporter, check=args.check, game_dir=args.game_dir)
     except OSError:
         reporter.report("storage_failed")
         return 1

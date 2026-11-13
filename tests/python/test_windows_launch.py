@@ -24,7 +24,11 @@ def load_module(name, path):
     return module
 
 
-launch = load_module("windows_launch", SOURCE / "src/platform/windows/launch.py")
+# The installed layout is flat; keep this platform's dialog module out of other tests.
+with patch.dict(sys.modules), patch.object(
+        sys, "path", [str(SOURCE / "src/platform/windows"), *sys.path]):
+    sys.modules.pop("folder_dialog", None)
+    launch = load_module("windows_launch", SOURCE / "src/platform/windows/launch.py")
 staging = load_module("stage_launcher", SOURCE / "tools/stage_launcher.py")
 
 
@@ -35,7 +39,7 @@ class WindowsLauncherTests(unittest.TestCase):
         data = parent / "synthetic game \u00e6"
         (root / "bin").mkdir(parents=True)
         data.mkdir()
-        for name in ("battle-brawlers.exe", "rexruntime.dll", "rexgpu-xenos.dll"):
+        for name in ("battle-brawlers.exe", "rexruntime.dll", "rexgpu-xenos.dll", *launch.VC_RUNTIME):
             (root / "bin" / name).touch()
         (data / "default.xex").touch()
         (root / "game-data.json").write_text(json.dumps({"path": str(data)}), encoding="utf-8")
@@ -69,11 +73,40 @@ class WindowsLauncherTests(unittest.TestCase):
                     else:
                         path.write_text(config, encoding="utf-8")
                     reporter = RecordingReporter()
-                    with patch.object(launch, "supervise") as supervise:
+                    with patch.object(launch, "supervise") as supervise, \
+                            patch.object(launch, "request") as request:
                         self.assertEqual(launch.launch(root, reporter, check=True), 1)
                     supervise.assert_not_called()
-                    self.assertEqual([key for key, _ in reporter.events], ["missing_files"])
+                    request.assert_not_called()
+                    self.assertEqual([key for key, _ in reporter.events], ["game_files_not_chosen"])
                     self.assertFalse((root / "user-data").exists())
+
+    def test_first_launch_asks_and_uses_the_chosen_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, data = self.installation(Path(directory))
+            (root / "game-data.json").unlink()
+            reporter = RecordingReporter()
+            with patch.object(launch, "request", return_value=data) as request, \
+                    patch.object(launch, "lock_installation"), \
+                    patch.object(launch, "unlock_installation"), \
+                    patch.object(launch, "supervise", return_value=0) as supervise:
+                self.assertEqual(launch.launch(root, reporter), 0)
+            request.assert_called_once_with(root, reporter, launch.choose_directory)
+            self.assertIn(f"--game_data_root={data}", supervise.call_args.args[0])
+
+    def test_cancelled_request_or_refused_option_never_launches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, _ = self.installation(Path(directory))
+            (root / "game-data.json").unlink()
+            with patch.object(launch, "supervise") as supervise:
+                with patch.object(launch, "request", return_value=None):
+                    self.assertEqual(launch.launch(root, RecordingReporter()), 1)
+                reporter = RecordingReporter()
+                with patch.object(launch, "accept", return_value=None) as accept:
+                    self.assertEqual(launch.launch(root, reporter, game_dir="synthetic choice"), 1)
+                accept.assert_called_once_with(root, reporter, "synthetic choice")
+            supervise.assert_not_called()
+            self.assertFalse((root / "user-data").exists())
 
     def test_missing_native_file_or_executable_fails_check(self):
         for name in ("bin/battle-brawlers.exe", "bin/rexruntime.dll", "bin/rexgpu-xenos.dll"):
@@ -83,6 +116,26 @@ class WindowsLauncherTests(unittest.TestCase):
                 reporter = RecordingReporter()
                 self.assertEqual(launch.launch(root, reporter, check=True), 1)
                 self.assertEqual(reporter.events[0][0], "missing_files")
+
+    def test_missing_compiler_runtime_is_reported_before_any_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, _ = self.installation(Path(directory))
+            system = Path(directory) / "synthetic windows"
+            (system / "System32").mkdir(parents=True)
+            with patch.dict(launch.os.environ, {"SystemRoot": str(system)}):
+                self.assertTrue(launch.vc_runtime_present(root))
+                (root / "bin" / launch.VC_RUNTIME[1]).unlink()
+                reporter = RecordingReporter()
+                with patch.object(launch, "request") as request, \
+                        patch.object(launch, "supervise") as supervise:
+                    self.assertEqual(launch.launch(root, reporter), 1)
+                request.assert_not_called()
+                supervise.assert_not_called()
+                self.assertEqual([key for key, _ in reporter.events], ["vc_runtime_missing"])
+                self.assertIn("vc_runtime_missing", reporter.messages)
+                # The redistributable's system copy satisfies the same import.
+                (system / "System32" / launch.VC_RUNTIME[1]).touch()
+                self.assertTrue(launch.vc_runtime_present(root))
 
     def test_missing_game_executable_fails_check(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -172,8 +225,11 @@ class LauncherStagingTests(unittest.TestCase):
                 staging.stage(destination, platform=platform)
                 source = SOURCE / "src/platform" / platform / "launch.py"
                 self.assertEqual((destination / "launch.py").read_bytes(), source.read_bytes())
-                self.assertEqual((destination / "launch_support.py").read_bytes(),
-                                 (SOURCE / "src/platform/common/launch_support.py").read_bytes())
+                self.assertEqual((destination / "folder_dialog.py").read_bytes(),
+                                 (source.parent / "folder_dialog.py").read_bytes())
+                for shared in ("launch_support.py", "game_files.py"):
+                    self.assertEqual((destination / shared).read_bytes(),
+                                     (SOURCE / "src/platform/common" / shared).read_bytes())
                 self.assertTrue((destination / "prism_speech.py").is_file())
                 self.assertTrue((destination / "messages.en.json").is_file())
                 self.assertTrue((destination / "NOTICE.md").is_file())
