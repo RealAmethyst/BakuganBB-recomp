@@ -44,7 +44,7 @@ def browse(title):
         raise DialogUnavailable("OLE initialization failed")
     try:
         display_name = ctypes.create_unicode_buffer(260)
-        info = BrowseInfo(None, None, display_name, title,
+        info = BrowseInfo(None, None, ctypes.cast(display_name, wintypes.LPWSTR), title,
                           BIF_RETURNONLYFSDIRS | BIF_EDITBOX | BIF_NEWDIALOGSTYLE
                           | BIF_NONEWFOLDERBUTTON, None, 0, 0)
         item = shell.SHBrowseForFolderW(ctypes.byref(info))
@@ -68,7 +68,7 @@ def choose_directory(title):
     def run():
         try:
             outcome["path"] = browse(title)
-        except (OSError, AttributeError, DialogUnavailable) as error:
+        except Exception as error:  # Any dialog failure must reach the console prompt.
             outcome["error"] = error
 
     # A dedicated thread owns the apartment, whatever COM state speech libraries

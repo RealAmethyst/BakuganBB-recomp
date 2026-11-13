@@ -249,7 +249,7 @@ class WindowsDialogTests(unittest.TestCase):
                 browse.assert_called_once_with("Synthetic title")
 
     def test_shell_failure_becomes_unavailable(self):
-        for error in (OSError("synthetic"), AttributeError("synthetic"),
+        for error in (OSError("synthetic"), AttributeError("synthetic"), TypeError("synthetic"),
                       game_files.DialogUnavailable("synthetic")):
             with self.subTest(error=error), patch.object(self.dialog, "browse", side_effect=error):
                 with self.assertRaises(game_files.DialogUnavailable):

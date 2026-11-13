@@ -33,7 +33,7 @@
   "game_files_missing": "That folder does not hold the game files. It must contain default.xex and the media folder.",
   "game_files_unsupported": "Those game files are not the supported version of the game.",
   "game_files_verified": "Game files verified.",
-  "game_files_cancelled": "No game folder was chosen. The game was not started.",
+  "game_files_cancelled": "No game folder was chosen. The game was not started. You can also start the launcher with --game-dir followed by the folder path.",
   "game_files_dialog_unavailable": "A folder dialog is not available here. Start the launcher again with --game-dir followed by the folder path.",
   "game_files_not_chosen": "No game folder has been chosen yet. Start the launcher without --check to choose it.",
   "keyboard_blank": "Blank",
