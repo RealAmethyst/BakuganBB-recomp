@@ -55,7 +55,7 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/src/core/accessibility;${{ github.workspace }}/src/platform/common
         run: >-
           python -m unittest -v test_keyboard_speech test_screen_speech
-          test_speech_text test_prism_speech test_launch test_windows_launch test_build_tools
+          test_speech_text test_prism_speech test_launch test_windows_launch test_game_files test_build_tools
 
   rexglue:
     name: Patched ReXGlue generator and Vulkan runtime
@@ -197,3 +197,16 @@ jobs:
           python -c "import os; from pathlib import Path; from stage_game import audit_windows_runtime;
           files = audit_windows_runtime(prism_build=Path(os.environ['RUNNER_TEMP']) / 'prism-build');
           print('Audited Prism files:', ', '.join(sorted(files)))"
+      # Open-source speech library only; no game input or game-derived output
+      # exists in this job. Release packaging consumes this audited build.
+      - name: Collect the audited Prism library
+        run: |
+          $package = New-Item -ItemType Directory "$env:RUNNER_TEMP/prism-package"
+          Copy-Item "$env:RUNNER_TEMP/prism-build/prism.dll" $package
+          Copy-Item "$env:RUNNER_TEMP/prism-build/CMakeCache.txt" $package
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: prism-windows-x64
+          path: ${{ runner.temp }}/prism-package
+          if-no-files-found: error
+          retention-days: 30
