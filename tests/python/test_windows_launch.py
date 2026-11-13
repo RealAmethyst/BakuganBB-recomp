@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from test_launch import MESSAGES, RecordingReporter
+from test_launch import MESSAGES, RecordingReporter, synthetic_game, synthetic_identity
 
 
 SOURCE = Path(__file__).resolve().parents[2]
@@ -33,15 +33,17 @@ staging = load_module("stage_launcher", SOURCE / "tools/stage_launcher.py")
 
 
 class WindowsLauncherTests(unittest.TestCase):
+    def setUp(self):
+        synthetic_identity(self)
+
     def installation(self, parent):
         parent = parent.resolve()
         root = parent / "synthetic install"
         data = parent / "synthetic game \u00e6"
         (root / "bin").mkdir(parents=True)
-        data.mkdir()
+        synthetic_game(data)
         for name in ("battle-brawlers.exe", "rexruntime.dll", "rexgpu-xenos.dll", *launch.VC_RUNTIME):
             (root / "bin" / name).touch()
-        (data / "default.xex").touch()
         (root / "game-data.json").write_text(json.dumps({"path": str(data)}), encoding="utf-8")
         (root / "messages.en.json").write_text(MESSAGES.read_text(encoding="utf-8"), encoding="utf-8")
         return root, data

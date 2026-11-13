@@ -23,7 +23,8 @@ from stage_launcher import ROOT, stage as stage_launcher
 
 
 VERSION = re.compile(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?")
-LICENSE_NAME = re.compile(r"(?:licen[sc]e|copying|notice|unlicense)(?:[.-][\w.-]*)?", re.IGNORECASE)
+LICENSE_NAME = re.compile(r"(?:licen[sc]e|copying|notice|unlicense|copyright)(?:[._-][\w.-]*)?", re.IGNORECASE)
+NOT_A_NOTICE = {".cfg", ".py", ".cmake", ".json", ".c", ".h", ".cpp"}
 # Vendored SDK components that are test-only, disabled or for other platforms.
 UNUSED_COMPONENTS = {"catch2", "tracy", "moltenvk", "vulkan-loader", "dxc"}
 # Windows components the import tables may name. A package cannot be resolved
@@ -77,7 +78,7 @@ def third_party_notices(sdk):
         found = False
         for path in sorted(component.rglob("*")):
             relative = path.relative_to(component)
-            if len(relative.parts) > 3 or not path.is_file() or path.suffix == ".cfg":
+            if len(relative.parts) > 3 or not path.is_file() or path.suffix.lower() in NOT_A_NOTICE:
                 continue
             if LICENSE_NAME.fullmatch(path.name) or "LICENSES" in relative.parts[:-1]:
                 notices[f"licenses/rexglue/thirdparty/{component.name}/{relative.as_posix()}"] = path
@@ -85,6 +86,11 @@ def third_party_notices(sdk):
         if not found:
             without.append(component.name)
     return notices, without
+
+
+def checkout_revision(source):
+    """Return the commit a dependency checkout is at."""
+    return subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
 
 
 def source_revision():
@@ -190,6 +196,10 @@ def package(platform, native_build, prism_build, prism_source, rexglue_source, v
         paths = {name: runpath(files[name]) for name in ("bin/librexruntime.so", "bin/librexgpu-xenos.so")}
     sdk_manifest = json.loads((ROOT / "patches/rexglue/manifest.json").read_text(encoding="utf-8"))
     prism_manifest = json.loads((ROOT / "patches/prism/manifest.json").read_text(encoding="utf-8"))
+    # The package records these revisions and takes its notices from these trees.
+    for name, source, manifest in (("ReXGlue", sdk, sdk_manifest), ("Prism", prism_source, prism_manifest)):
+        if checkout_revision(source) != manifest["revision"]:
+            raise ValueError(f"The {name} source is not at the pinned revision")
 
     # All preflight checks finish before creating the package.
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
@@ -238,6 +248,7 @@ def assemble(output, platform, version, revision, files, paths, prism_source, sd
         runtime_paths[0].write_text(runtime_paths[0].stem + ".zip\n.\n..\n", encoding="ascii")
         (root / "Play.bat").write_bytes(PLAY_SCRIPT.encode("ascii"))
         record["python_archive_sha256"] = digest(windows_python)
+    root.chmod(0o755)
     for path in root.rglob("*"):
         relative = path.relative_to(root).as_posix()
         path.chmod(0o755 if path.is_dir() or relative in EXECUTABLES else 0o644)

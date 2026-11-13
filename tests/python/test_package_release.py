@@ -31,6 +31,12 @@ class PackagingFixture(StagingFixture):
             path.write_bytes(b"Original synthetic notice fixture: " + relative.encode())
         (sdk / "not-initialized").mkdir()
         self.stack.enter_context(patch.object(package_release, "runpath", return_value="$ORIGIN"))
+        manifests = {name: json.loads((stage_game.ROOT / f"patches/{name}/manifest.json").read_text())["revision"]
+                     for name in ("rexglue", "prism")}
+        self.checkouts = {self.inputs["rexglue-source"]: manifests["rexglue"],
+                          self.inputs["prism-source"]: manifests["prism"]}
+        self.stack.enter_context(patch.object(
+            package_release, "checkout_revision", side_effect=lambda source: self.checkouts[source]))
         self.revision = self.stack.enter_context(
             patch.object(package_release, "source_revision", return_value=REVISION))
         self.output = self.root / "release output"
@@ -139,6 +145,14 @@ class LinuxPackageTests(PackagingFixture):
         (self.inputs["prism-build"] / "CMakeCache.txt").write_text(
             "PRISM_ENABLE_ORCA_BACKEND:BOOL=ON\nPRISM_ENABLE_SPEECH_DISPATCHER_BACKEND:BOOL=ON\n")
         self.refused("screen-reader backends")
+
+    def test_dependency_source_at_another_revision_is_refused(self):
+        for name in ("rexglue-source", "prism-source"):
+            with self.subTest(name=name):
+                pinned = self.checkouts[self.inputs[name]]
+                self.checkouts[self.inputs[name]] = "f" * 40
+                self.refused("not at the pinned revision")
+                self.checkouts[self.inputs[name]] = pinned
 
     def test_python_archive_is_refused_for_linux(self):
         archive = self.root / "python.zip"

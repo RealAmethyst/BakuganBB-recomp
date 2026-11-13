@@ -53,7 +53,9 @@ def browse(title):
         try:
             path = ctypes.create_unicode_buffer(PATH_CAPACITY)
             if not shell.SHGetPathFromIDListEx(item, path, PATH_CAPACITY, 0):
-                return None
+                # A chosen item without a file-system path, such as a network
+                # server, is a refused choice and not a cancellation.
+                return display_name.value or "?"
             return path.value or None
         finally:
             ole.CoTaskMemFree(item)

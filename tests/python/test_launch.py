@@ -1,5 +1,6 @@
 """Original process fixtures; never execute or load game code."""
 
+import hashlib
 import json
 import io
 from pathlib import Path
@@ -13,11 +14,30 @@ if sys.platform == "win32":
     import launch_support as launch
 else:
     import launch
+import game_files
 from test_keyboard_speech import event, Speech
 from test_screen_speech import event as screen_event
 
 
 MESSAGES = Path(__file__).resolve().parents[2] / "resources" / "messages.en.json"
+
+
+PLACEHOLDER = b"Original synthetic executable placeholder; never run."
+
+
+def synthetic_identity(test):
+    """Make the placeholder the supported executable for one test."""
+    for name, value in (("EXECUTABLE_SIZE", len(PLACEHOLDER)),
+                        ("EXECUTABLE_SHA256", hashlib.sha256(PLACEHOLDER).hexdigest())):
+        patcher = patch.object(game_files, name, value)
+        patcher.start()
+        test.addCleanup(patcher.stop)
+
+
+def synthetic_game(directory):
+    (directory / "media").mkdir(parents=True)
+    (directory / "default.xex").write_bytes(PLACEHOLDER)
+    return directory
 
 
 class RecordingReporter:
@@ -30,6 +50,9 @@ class RecordingReporter:
 
 
 class SupervisorTests(unittest.TestCase):
+    def setUp(self):
+        synthetic_identity(self)
+
     def test_option_message_transport_and_log_redaction(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -74,9 +97,8 @@ class SupervisorTests(unittest.TestCase):
 
     def installation(self, root):
         (root / "bin").mkdir()
-        (root / "data").mkdir()
-        for name in ["bin/battle-brawlers", "bin/librexruntime.so", "bin/librexgpu-xenos.so",
-                     "data/default.xex"]:
+        synthetic_game(root / "data")
+        for name in ["bin/battle-brawlers", "bin/librexruntime.so", "bin/librexgpu-xenos.so"]:
             (root / name).touch(mode=0o700)
 
     def run_fixture(self, script):
@@ -280,10 +302,11 @@ class SupervisorTests(unittest.TestCase):
             root = Path(directory) / "install"
             root.mkdir()
             self.installation(root)
-            self.assertEqual(launch.game_directory(root), root / "data")
-            remembered = Path(directory) / "remembered"
-            remembered.mkdir()
-            (remembered / "default.xex").touch()
+            self.assertEqual(launch.game_directory(root), (root / "data").absolute())
+            (root / "data/default.xex").write_bytes(b"Another version.")
+            self.assertIsNone(launch.game_directory(root))
+            (root / "data/default.xex").write_bytes(PLACEHOLDER)
+            remembered = synthetic_game(Path(directory).resolve() / "remembered")
             (root / "game-data.json").write_text(json.dumps({"path": str(remembered)}))
             self.assertEqual(launch.game_directory(root), remembered)
             reporter = RecordingReporter()

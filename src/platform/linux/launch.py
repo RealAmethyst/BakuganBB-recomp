@@ -10,7 +10,7 @@ import sys
 import tempfile
 
 from folder_dialog import choose_directory
-from game_files import accept, request, saved_directory
+from game_files import accept, inspect, request, saved_directory
 from prism_speech import PrismSpeech
 from launch_support import EVENTS, PREFIX, SPOKEN_EVENTS, Reporter, supervise
 
@@ -20,8 +20,8 @@ def game_directory(root):
     saved = saved_directory(root)
     if saved is not None:
         return saved
-    staged = root / "data"
-    return staged if (staged / "default.xex").is_file() else None
+    staged = (root / "data").absolute()
+    return staged if inspect(staged) == "ok" else None
 
 
 def main():

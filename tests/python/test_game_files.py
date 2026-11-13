@@ -1,6 +1,5 @@
 """Original game-directory fixtures; no game file, dialog or process is used."""
 
-import hashlib
 import importlib.util
 import io
 import json
@@ -11,11 +10,10 @@ import unittest
 from unittest.mock import patch
 
 import game_files
-from test_launch import RecordingReporter
+from test_launch import PLACEHOLDER, RecordingReporter, synthetic_identity
 
 
 SOURCE = Path(__file__).resolve().parents[2]
-PLACEHOLDER = b"Original synthetic executable placeholder; never run."
 
 
 def load_module(name, path):
@@ -33,11 +31,7 @@ class GameDirectoryFixture(unittest.TestCase):
         self.root = self.parent / "synthetic install"
         self.root.mkdir()
         self.game = self.game_directory("synthetic game \u00e6")
-        for name, value in (("EXECUTABLE_SIZE", len(PLACEHOLDER)),
-                            ("EXECUTABLE_SHA256", hashlib.sha256(PLACEHOLDER).hexdigest())):
-            patcher = patch.object(game_files, name, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        synthetic_identity(self)
 
     def game_directory(self, name, executable=PLACEHOLDER, media=True):
         directory = self.parent / name
@@ -95,6 +89,14 @@ class RememberedDirectoryTests(GameDirectoryFixture):
                 self.assertIsNone(game_files.accept(self.root, reporter, str(candidate)))
                 self.assertEqual(self.events(reporter), [event])
                 self.assertEqual(game_files.saved_directory(self.root), self.game)
+
+    def test_remembered_directory_is_verified_again_on_every_use(self):
+        game_files.remember(self.root, self.game)
+        (self.game / "default.xex").write_bytes(b"Another version.")
+        self.assertIsNone(game_files.saved_directory(self.root))
+        (self.game / "default.xex").write_bytes(PLACEHOLDER)
+        (self.game / "media").rmdir()
+        self.assertIsNone(game_files.saved_directory(self.root))
 
     def test_invalid_or_stale_configuration_is_not_used(self):
         configs = [None, "{", "[]", "null", "{}", '{"path":1}', '{"path":"relative"}',

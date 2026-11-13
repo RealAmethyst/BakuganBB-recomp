@@ -22,17 +22,16 @@ class DialogUnavailable(Exception):
 
 
 def saved_directory(root):
-    """Return the remembered game directory, or None when it is unusable."""
+    """Return the remembered game directory, or None unless it still verifies."""
     try:
         config = json.loads((root / CONFIG).read_text(encoding="utf-8"))
         if not isinstance(config, dict) or not isinstance(config.get("path"), str):
             return None
         path = Path(config["path"])
-        if path.is_absolute() and (path / "default.xex").is_file():
-            return path
     except (OSError, ValueError):
-        pass
-    return None
+        return None
+    # The files may have changed since the directory was chosen.
+    return path if inspect(path) == "ok" else None
 
 
 def inspect(path):
