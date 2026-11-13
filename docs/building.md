@@ -73,7 +73,7 @@ cmake -S "$PROJECT_SOURCE" -B "$WORK/native-build" -G Ninja \
 cmake --build "$WORK/native-build" --target battle-brawlers --parallel 2
 ```
 
-The translation directory contains private generated game code and generation logs. The native output is under `WORK/native-build/native`. Neither belongs in a commit, issue attachment or release upload.
+The translation directory contains private generated game code and generation logs. The native output is under `WORK/native-build/native`. Neither belongs in a commit or issue attachment. Only the project owner publishes compiled packages, as the [release guide](releasing.md) describes.
 
 If generation fails, inspect `translation/codegen.log`. The tool preserves failed output for diagnosis; choose a new output directory for another attempt. Do not bypass an executable identity failure.
 
@@ -134,9 +134,9 @@ The check command checks required files without starting the game or speech. Whe
 python3 "$WORK/game/launch.py"
 ```
 
-Speech goes to an already running Orca. Without one, the launcher remains silent. Writable settings, saves, caches and logs stay under `WORK/game/user-data`. Keep the original game directory available while using this installation.
+Speech goes to an already running Orca. Without one, the launcher remains silent. An installation without a linked game directory asks for one on first start, as the [player guide](playing.md) describes. Writable settings, saves, caches and logs stay under `WORK/game/user-data`. Keep the original game directory available while using this installation.
 
-This produces a local build, not a portable release package. It has not been tested across Linux distributions. A future downloadable application that asks for game files needs separate packaging, compatibility and distribution work.
+This produces a local build tied to your system's libraries, not a portable release package. Downloadable packages are built against an older baseline and assembled separately; see the [release guide](releasing.md).
 
 ## Automated code checks
 
@@ -201,8 +201,9 @@ gh workflow run windows-build.yml --repo RealAmethyst/BakuganBB-recomp
 ```
 
 The workflow uses only public source and original synthetic fixtures. It does
-not fetch game files, generate or compile proprietary game code, or upload
-artifacts or caches. Dependency revisions come from the patch manifests. Git
+not fetch game files or generate or compile proprietary game code. Its only
+upload is the audited Prism library, an open-source dependency build that
+[release packaging](releasing.md) consumes. No caches are used. Dependency revisions come from the patch manifests. Git
 line-ending conversion is disabled in the disposable VMs so the patch checksum
 checks inspect the original bytes.
 

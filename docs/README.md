@@ -2,7 +2,9 @@
 
 ## Start here
 
+- [Player guide](playing.md): requirements, first start and feedback for alpha test builds.
 - [Building and testing](building.md): source-only checks and private integration requirements.
+- [Windows building](building-windows.md) and [release packaging](releasing.md).
 - [Windows development build](building-windows.md): pinned dependencies, private staging and manual checks.
 - [Architecture](architecture.md): source layout and dependency boundaries.
 - [Host and speech integration](integration.md): component contracts and synthetic coverage.

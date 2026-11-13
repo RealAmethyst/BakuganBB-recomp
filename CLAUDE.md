@@ -9,7 +9,8 @@
 
 ## Publication boundary
 
-- Do not download game assets. No game assets, game executables, raw decompilation, generated proprietary source, game shader caches, native game binaries or asset acquisition guidance in source, documentation, fixtures, CI artifacts or releases. Keep private inputs and outputs outside this tree.
+- Do not download game assets. No game assets, game executables, raw decompilation, generated proprietary source, game shader caches or asset acquisition guidance in source, documentation, fixtures, CI artifacts or releases. Keep private inputs and outputs outside this tree.
+- Compiled native game binaries stay out of source, documentation, fixtures, issues and CI artifacts. The only exception is an owner-authorized release package built as the [release guide](docs/releasing.md) describes: it contains the compiled program and no game files, and its launcher asks each player for their own. Each release needs the owner's explicit request. CI may publish builds of open-source dependencies only.
 - Use original synthetic fixtures. Audit actual files and proposed history, not just ignore patterns. Retain third-party attribution and licenses; keep shared content impersonal and free of private paths or identifying logs.
 - Preserve working behavior and existing changes. Do not commit, push or rewrite history without an explicit request. Visibility and publication require owner authorization; do not infer it from ordinary development work.
 

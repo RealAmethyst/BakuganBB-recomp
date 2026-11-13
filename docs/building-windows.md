@@ -9,7 +9,8 @@ testing. See [issue 38](https://github.com/RealAmethyst/BakuganBB-recomp/issues/
 
 Keep dependencies, game files, generated code, logs and build output outside the
 repository. Do not upload game inputs, translated code or native game binaries to
-GitHub Actions, issues, caches, artifacts or releases. These commands do not
+GitHub Actions, issues, caches or artifacts. Only the project owner publishes
+compiled packages, following the [release guide](releasing.md). These commands do not
 launch the game or load a screen reader.
 
 Use Windows 10 or newer on x64, a CPU supporting x86-64-v2, Git, Python 3.12, CMake 3.25 or newer,
@@ -145,6 +146,9 @@ checked with the OS availability query; missing physical DLLs and unavailable
 contracts remain errors. See [Microsoft's API-set contract](https://learn.microsoft.com/en-us/windows/win32/apiindex/windows-apisets). `game-data.json` points to the external
 game directory; no administrator access, junction or symbolic link is required.
 The check-only launcher does not load Prism, launch a process or create user data.
+
+An installation without a recorded game directory asks for one on first start,
+as the [player guide](playing.md) describes.
 
 When ready for manual testing, the tester starts their preferred screen reader
 and launches the private build:

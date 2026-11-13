@@ -8,11 +8,11 @@
 
 `src/runtime` binds the host to ReXGlue and transports runtime UI events. It depends on the patched SDK and, for the host, private generated image configuration. Runtime integration is separate from OS-specific process supervision; it is not classified as portable core merely because the SDK abstracts some platforms.
 
-`src/platform/linux/launch.py` and `src/platform/windows/launch.py` own their platform's launch locking and installation paths. `src/platform/common/launch_support.py` shares child-process supervision, event routing and speech policy. Windows uses an external game-directory configuration instead of a symlink. There is no macOS launcher. Platform build and fixture evidence does not establish gameplay or audible speech.
+`src/platform/linux/launch.py` and `src/platform/windows/launch.py` own their platform's launch locking and installation paths. `src/platform/common/launch_support.py` shares child-process supervision, event routing and speech policy. `src/platform/common/game_files.py` verifies the player's game directory against the supported executable identity and remembers its location in `game-data.json`; each platform's `folder_dialog.py` presents the directory request. A locally staged Linux installation may still use its `data` link, which a remembered directory overrides. There is no macOS launcher. Platform build and fixture evidence does not establish gameplay or audible speech.
 
 ## Sources and installed layout
 
-Repository layout describes responsibilities. The private installed application retains its existing flat Python launcher/module layout, with `messages.en.json` beside the launcher, and `bin`, `lib`, `data` and `user-data` beneath the installation root. The [build guide](building.md) describes source staging. Moving repository files must not change that working installation contract.
+Repository layout describes responsibilities. The private installed application retains its existing flat Python launcher/module layout, with `messages.en.json` beside the launcher, and `bin`, `lib`, `data` and `user-data` beneath the installation root. The [build guide](building.md) describes source staging. Moving repository files must not change that working installation contract. A [release package](releasing.md) uses the same layout without `data`: it holds no game files and records the player's own directory on first start.
 
 `resources` contains central project wording and verified artwork-only transcriptions, not extracted game assets. Ordinary game captions are captured from the actual runtime text consumers. `tests` contains original synthetic fixtures; `patches/rexglue` retains SDK patches, provenance and their associated regression fixtures.
 

@@ -8,9 +8,13 @@ An early, work-in-progress PC recompilation of Bakugan Battle Brawlers (2009) fo
 
 Input and audio are working, but this is still very early. Expect crashes and unfinished features. I haven't tested far into the game, so don't expect a complete playthrough yet.
 
+## Alpha test builds
+
+Alpha builds for Windows and Linux are on the [releases page](https://github.com/RealAmethyst/BakuganBB-recomp/releases). They are meant for testing and feedback. The first time you start one, it asks for the folder that holds your own game files. Read the [player guide](docs/playing.md) for requirements, first-start steps and known limits.
+
 ## Building
 
-There isn't a prebuilt release yet. You can build the game locally using your own game files. Follow the [Linux build guide](docs/building.md) to build for Linux or the [Windows build guide](docs/building-windows.md) to build for Windows.
+You can also build the game locally using your own game files. Follow the [Linux build guide](docs/building.md) to build for Linux or the [Windows build guide](docs/building-windows.md) to build for Windows.
 
 Developers can already run the automated code checks with `python3 tools/run_tests.py`. These checks don't run the game or need game files. The build guide lists the tools needed to run them.
 
@@ -36,4 +40,4 @@ Help with testing, graphics, reverse engineering and other platforms is welcome.
 
 Original project code and documentation use [BSD-3-Clause](LICENSE). Third-party credits and licenses are listed in [NOTICE.md](NOTICE.md). The game and its assets are not covered by this license. This is an unofficial project.
 
-Code and documentation were prepared with Codex assistance.
+Code and documentation were prepared with AI assistance from Codex and Claude.

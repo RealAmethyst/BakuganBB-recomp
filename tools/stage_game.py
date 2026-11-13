@@ -83,6 +83,56 @@ def check_windows_api_sets(unresolved):
         raise ValueError("Windows API-set availability query failed") from error
 
 
+def check_windows_x64(path):
+    """Require an x64 PE image by reading headers only."""
+    header = subprocess.check_output(["llvm-readobj", "--file-headers", str(path)],
+                                     text=True, encoding="utf-8", errors="replace")
+    if not re.search(r"^Format: COFF-x86-64$", header, re.MULTILINE) or not re.search(
+            r"^\s*Machine: IMAGE_FILE_MACHINE_AMD64 \(0x8664\)$", header, re.MULTILINE) or not re.search(
+            r"^ImageOptionalHeader \{\s+Magic: 0x20B$", header, re.MULTILINE):
+        raise ValueError(f"Expected an x64 Windows PE binary: {path.name}")
+
+
+def runtime_files(platform, native, prism_build):
+    """Map installed names to the built host, runtime, plugin and speech library."""
+    if platform == "windows":
+        return {
+            "bin/battle-brawlers.exe": native / "battle-brawlers.exe",
+            "bin/rexruntime.dll": native / "rexruntime.dll",
+            "bin/rexgpu-xenos.dll": native / "rexgpu-xenos.dll",
+            "lib/prism.dll": prism_build / "prism.dll",
+        }
+    return {
+        "bin/battle-brawlers": native / "battle-brawlers",
+        "bin/librexruntime.so": native / "librexruntime.so",
+        "bin/librexgpu-xenos.so": native / "librexgpu-xenos.so",
+        "lib/libprism.so": prism_build / "libprism.so",
+    }
+
+
+def license_files(sdk, prism_source):
+    """Map installed names to the notices every installation retains."""
+    return {
+        "licenses/rexglue/LICENSE": sdk / "LICENSE",
+        "licenses/rexglue/NOTICE.md": ROOT / "patches/rexglue/NOTICE.md",
+        "licenses/prism/LICENSE": prism_source / "LICENSE",
+        "licenses/prism/NOTICE": prism_source / "NOTICE",
+        "licenses/prism/local-notice.md": ROOT / "patches/prism/NOTICE.md",
+        "licenses/prism/orca-existing-reader.patch": ROOT / "patches/prism/orca-existing-reader.patch",
+        "licenses/prism/manifest.json": ROOT / "patches/prism/manifest.json",
+    }
+
+
+def normalize_runpaths(output, paths):
+    """Point staged copies at their own directory; build outputs stay unchanged."""
+    for name, old in paths.items():
+        if old != "$ORIGIN":
+            subprocess.run(["cmake", "-DINPUT=" + str(output / name), "-DOLD_RPATH=" + old,
+                            "-P", str(ROOT / "cmake/StageRuntime.cmake")], check=True)
+        if runpath(output / name) != "$ORIGIN":
+            raise ValueError("Staged runtime search path did not match")
+
+
 def audit_windows_runtime(native=None, prism_build=None):
     """Inspect PE files and OS contracts without loading game or speech libraries."""
     if sys.platform != "win32":
@@ -118,12 +168,7 @@ def audit_windows_runtime(native=None, prism_build=None):
                 path = path.resolve(strict=True)
                 if path.parent != directory.resolve() or not path.is_file():
                     raise ValueError("Runtime dependency resolved outside its verified build output")
-                header = subprocess.check_output(["llvm-readobj", "--file-headers", str(path)],
-                                                 text=True, encoding="utf-8", errors="replace")
-                if not re.search(r"^Format: COFF-x86-64$", header, re.MULTILINE) or not re.search(
-                        r"^\s*Machine: IMAGE_FILE_MACHINE_AMD64 \(0x8664\)$", header, re.MULTILINE) or not re.search(
-                        r"^ImageOptionalHeader \{\s+Magic: 0x20B$", header, re.MULTILINE):
-                    raise ValueError(f"Expected an x64 Windows PE binary: {path.name}")
+                check_windows_x64(path)
                 target = destination + "/" + path.name
                 if target in files and files[target] != path:
                     raise ValueError("Runtime dependencies have conflicting destination names")
@@ -149,29 +194,8 @@ def stage(native_build, prism_build, prism_source, rexglue_source, game_dir, out
     executable = game / "default.xex"
     if executable.stat().st_size != EXECUTABLE_SIZE or digest(executable) != EXECUTABLE_SHA256:
         raise ValueError("Game directory does not contain the supported default.xex")
-    if platform == "windows":
-        files = {
-            "bin/battle-brawlers.exe": native / "battle-brawlers.exe",
-            "bin/rexruntime.dll": native / "rexruntime.dll",
-            "bin/rexgpu-xenos.dll": native / "rexgpu-xenos.dll",
-            "lib/prism.dll": prism_build / "prism.dll",
-        }
-    else:
-        files = {
-            "bin/battle-brawlers": native / "battle-brawlers",
-            "bin/librexruntime.so": native / "librexruntime.so",
-            "bin/librexgpu-xenos.so": native / "librexgpu-xenos.so",
-            "lib/libprism.so": prism_build / "libprism.so",
-        }
-    files.update({
-        "licenses/rexglue/LICENSE": sdk / "LICENSE",
-        "licenses/rexglue/NOTICE.md": ROOT / "patches/rexglue/NOTICE.md",
-        "licenses/prism/LICENSE": prism_source / "LICENSE",
-        "licenses/prism/NOTICE": prism_source / "NOTICE",
-        "licenses/prism/local-notice.md": ROOT / "patches/prism/NOTICE.md",
-        "licenses/prism/orca-existing-reader.patch": ROOT / "patches/prism/orca-existing-reader.patch",
-        "licenses/prism/manifest.json": ROOT / "patches/prism/manifest.json",
-    })
+    files = runtime_files(platform, native, prism_build)
+    files.update(license_files(sdk, prism_source))
     for source in files.values():
         if not source.is_file():
             raise ValueError(f"Required input is missing: {source}")
@@ -196,12 +220,7 @@ def stage(native_build, prism_build, prism_source, rexglue_source, game_dir, out
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
     shutil.copytree(prism_source / "LICENSES", output / "licenses/prism/LICENSES")
-    for name, old in paths.items():
-        if old != "$ORIGIN":
-            subprocess.run(["cmake", "-DINPUT=" + str(output / name), "-DOLD_RPATH=" + old,
-                            "-P", str(ROOT / "cmake/StageRuntime.cmake")], check=True)
-        if runpath(output / name) != "$ORIGIN":
-            raise ValueError("Staged runtime search path did not match")
+    normalize_runpaths(output, paths)
     if platform == "windows":
         (output / "game-data.json").write_text(json.dumps({"path": str(game)}) + "\n", encoding="utf-8")
     else:
